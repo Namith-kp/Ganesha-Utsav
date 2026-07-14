@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "442465747713",
+    "project_id": "ganesha-funds-tracker",
+    "storage_bucket": "ganesha-funds-tracker.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:442465747713:android:875bddaedfb0e7ded3d100",
+        "android_client_info": {
+          "package_name": "com.Dcross.ganeshtracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLe_5z0UChvqn7BqVBnaagqTmi1gpvq8U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
