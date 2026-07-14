@@ -37,14 +37,14 @@ final liveLocationProvider = StreamProvider<Position?>((ref) async* {
 
   // Yield current position first for quick UI load
   yield await Geolocator.getCurrentPosition(
-    desiredAccuracy: LocationAccuracy.high,
+    desiredAccuracy: LocationAccuracy.bestForNavigation,
   );
 
   // Then yield continuous stream
   yield* Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 2, // updates when user moves 2 meters
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 0, // Updates on every possible accuracy improvement
     ),
   );
 });
@@ -55,6 +55,6 @@ final currentLocationProvider = FutureProvider<Position?>((ref) async {
   if (!hasPermission) return null;
 
   return await Geolocator.getCurrentPosition(
-    desiredAccuracy: LocationAccuracy.high,
+    desiredAccuracy: LocationAccuracy.bestForNavigation,
   );
 });
