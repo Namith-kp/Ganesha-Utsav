@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/map_provider.dart';
 import '../models/building.dart';
 import '../models/unit.dart';
+import 'street_view_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -63,17 +64,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          final pos = ref.read(liveLocationProvider).value;
-          if (pos != null) {
-            _mapController.move(
-              LatLng(pos.latitude, pos.longitude), 
-              _mapController.camera.zoom,
-            );
-          }
-        },
-        child: const Icon(Icons.my_location),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'streetViewBtn',
+            backgroundColor: Colors.indigo,
+            onPressed: () {
+              final pos = ref.read(liveLocationProvider).value;
+              if (pos != null) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => StreetViewScreen(
+                      lat: pos.latitude,
+                      lon: pos.longitude,
+                    ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Waiting for location...')),
+                );
+              }
+            },
+            child: const Icon(Icons.streetview, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            heroTag: 'myLocationBtn',
+            onPressed: () {
+              final pos = ref.read(liveLocationProvider).value;
+              if (pos != null) {
+                _mapController.move(
+                  LatLng(pos.latitude, pos.longitude), 
+                  _mapController.camera.zoom,
+                );
+              }
+            },
+            child: const Icon(Icons.my_location),
+          ),
+        ],
       ),
       body: locationAsync.when(
         data: (position) {
