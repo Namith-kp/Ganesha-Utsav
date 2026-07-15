@@ -15,21 +15,65 @@ class PbTuple {
   PbTuple(this.childCount, this.serialized);
 }
 
+class StreetViewLink {
+  final String panoid;
+  final double lat;
+  final double lon;
+  final double yaw;
+
+  StreetViewLink({
+    required this.panoid,
+    required this.lat,
+    required this.lon,
+    required this.yaw,
+  });
+}
+
 class StreetViewPanorama {
   final String id;
   final double lat;
   final double lon;
   final double heading;
+  final List<StreetViewLink> links;
 
   StreetViewPanorama({
     required this.id,
     required this.lat,
     required this.lon,
     required this.heading,
+    required this.links,
   });
 }
 
 class StreetViewService {
+  final Map<String, Uint8List> _imageCache = {};
+  final Map<String, StreetViewPanorama> _panoCache = {};
+  static const int _maxCacheSize = 15;
+
+  void _addToCache(String panoid, Uint8List data) {
+    _imageCache[panoid] = data;
+    if (_imageCache.length > _maxCacheSize) {
+      _imageCache.remove(_imageCache.keys.first);
+    }
+  }
+
+  void clearCache() {
+    _imageCache.clear();
+    _panoCache.clear();
+  }
+
+  Future<void> prefetchPanoramas(List<String> panoids, {int zoom = 2}) async {
+    for (var panoid in panoids) {
+      if (!_imageCache.containsKey(panoid)) {
+        // Run in background without awaiting the whole loop
+        downloadPanoramaImage(panoid, zoom: zoom).then((data) {
+          // data is already cached inside downloadPanoramaImage
+        }).catchError((e) {
+          debugPrint('Prefetch failed for $panoid: $e');
+        });
+      }
+    }
+  }
   String toProtobufUrl(Map<int, dynamic> fields) {
     return _toProtobufUrl(fields).serialized;
   }
@@ -115,9 +159,29 @@ class StreetViewService {
     return "https://maps.googleapis.com/maps/api/js/GeoPhotoService.SingleImageSearch?pb=$pbString&callback=_xdc_._v2mub5";
   }
 
-  Future<StreetViewPanorama?> findPanorama(double lat, double lon) async {
+  Future<StreetViewPanorama?> findPanoramaByLink(StreetViewLink link) async {
+    if (_panoCache.containsKey(link.panoid)) {
+      return _panoCache[link.panoid];
+    }
     try {
-      final url = buildFindPanoramaRequestUrl(lat, lon, 1000.0);
+      final pano = await findPanorama(link.lat, link.lon, radius: 50.0);
+      if (pano != null) {
+        _panoCache[pano.id] = pano;
+        // Just in case the returned id is slightly different from link.panoid, cache it under both
+        if (pano.id != link.panoid) {
+          _panoCache[link.panoid] = pano;
+        }
+      }
+      return pano;
+    } catch (e) {
+      debugPrint('Error finding panorama by link: $e');
+      rethrow;
+    }
+  }
+
+  Future<StreetViewPanorama?> findPanorama(double lat, double lon, {double radius = 1000.0}) async {
+    try {
+      final url = buildFindPanoramaRequestUrl(lat, lon, radius);
       final response = await http.get(Uri.parse(url));
       if (response.statusCode != 200) {
         throw Exception("API returned status code ${response.statusCode}");
@@ -143,25 +207,91 @@ class StreetViewService {
         throw Exception("Missing message data in response: $data");
       }
       
-      final panoid = msg[1][1] as String;
-      
-      final latResponse = (msg[5][0][1][0][2] as num).toDouble();
-      final lonResponse = (msg[5][0][1][0][3] as num).toDouble();
-      final heading = (msg[5][0][1][2][0] as num).toDouble(); // degrees
-      
-      return StreetViewPanorama(
-        id: panoid,
-        lat: latResponse,
-        lon: lonResponse,
-        heading: heading,
-      );
+      final pano = _parsePanoramaMsg(msg);
+      _panoCache[pano.id] = pano;
+      return pano;
     } catch (e) {
       debugPrint('Error finding panorama: $e');
       rethrow;
     }
   }
 
+  StreetViewPanorama _parsePanoramaMsg(List<dynamic> msg) {
+    final panoid = msg[1][1] as String;
+    
+    final latResponse = (msg[5][0][1][0][2] as num).toDouble();
+    final lonResponse = (msg[5][0][1][0][3] as num).toDouble();
+    final heading = (msg[5][0][1][2][0] as num).toDouble(); // degrees
+    
+    List<StreetViewLink> links = [];
+    try {
+      final linksList = msg[5][0][3][0] as List?;
+      if (linksList != null) {
+        // Collect all links with their distances
+        List<Map<String, dynamic>> allLinks = [];
+        for (var l in linksList) {
+          final pId = l[0][1] as String;
+          final lLat = (l[2][0][2] as num).toDouble();
+          final lLon = (l[2][0][3] as num).toDouble();
+          final lYaw = (l[2][2][0] as num).toDouble();
+          
+          final distance = _calculateDistance(latResponse, lonResponse, lLat, lLon);
+          if (distance > 1.0) { // Skip self or virtually identical locations
+            allLinks.add({
+              'panoid': pId,
+              'lat': lLat,
+              'lon': lLon,
+              'yaw': lYaw,
+              'distance': distance,
+            });
+          }
+        }
+        
+        // Sort by distance ascending so we evaluate closest first
+        allLinks.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+        
+        for (var l in allLinks) {
+          final lYaw = l['yaw'] as double;
+          
+          // Skip panoramas that are in a very similar direction to ones we already picked
+          bool tooCloseInAngle = false;
+          for (var existing in links) {
+            double diff = (existing.yaw - lYaw).abs();
+            diff = diff > 180 ? 360 - diff : diff;
+            if (diff < 45.0) {
+              tooCloseInAngle = true;
+              break;
+            }
+          }
+          
+          if (!tooCloseInAngle) {
+            links.add(StreetViewLink(
+              panoid: l['panoid'] as String,
+              lat: l['lat'] as double,
+              lon: l['lon'] as double,
+              yaw: lYaw,
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Could not parse some links: $e');
+    }
+    
+    return StreetViewPanorama(
+      id: panoid,
+      lat: latResponse,
+      lon: lonResponse,
+      heading: heading,
+      links: links,
+    );
+  }
+
   Future<Uint8List?> downloadPanoramaImage(String panoid, {int zoom = 2}) async {
+    if (_imageCache.containsKey(panoid)) {
+      return _imageCache[panoid];
+    }
+    
     try {
       int tileWidth = 512;
       int tileHeight = 512;
@@ -191,10 +321,21 @@ class StreetViewService {
       await Future.wait(futures);
       client.close();
       
-      return Uint8List.fromList(img.encodeJpg(baseImage, quality: 85));
+      final result = Uint8List.fromList(img.encodeJpg(baseImage, quality: 85));
+      _addToCache(panoid, result);
+      return result;
     } catch (e) {
       debugPrint('Error downloading panorama: $e');
       return null;
     }
+  }
+
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    var p = 0.017453292519943295;
+    var c = cos;
+    var a = 0.5 - c((lat2 - lat1) * p)/2 + 
+          c(lat1 * p) * c(lat2 * p) * 
+          (1 - c((lon2 - lon1) * p))/2;
+    return 12742 * asin(sqrt(a)) * 1000;
   }
 }

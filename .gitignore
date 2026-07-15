@@ -43,3 +43,26 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/webp_images
+
+# --- Untracked / Scratch Files ---
+scratch*.dart
+test_pb*.dart
+test_api.dart
+test_photometa.dart
+
+# Data dumps and temp files
+dump*.json
+temp.json
+raw_response.txt
+git_log*.txt
+*metadata.json
+dump_api.*
+
+# Scripts and python env
+streetlevel_google*.py
+venv/
+scripts/
+
+# Firebase Secrets
+google-services.json

@@ -118,6 +118,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             options: MapOptions(
               initialCenter: initialCenter,
               initialZoom: 18.0, // Zoom in a bit more for building view
+              onTap: (tapPosition, point) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => StreetViewScreen(
+                      lat: point.latitude,
+                      lon: point.longitude,
+                    ),
+                  ),
+                );
+              },
               onLongPress: (tapPosition, point) {
                 _showCreateBuildingDialog(context, ref, point);
               },

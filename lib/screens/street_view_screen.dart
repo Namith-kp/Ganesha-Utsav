@@ -1,212 +1,255 @@
-import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:panorama_viewer/panorama_viewer.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/street_view_provider.dart';
-import '../providers/map_provider.dart';
-import '../models/building.dart';
-import '../services/street_view_service.dart';
+import 'dart:math' as math;
+import '../models/street_view_node.dart';
+
+double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  const R = 6371e3; // metres
+  final phi1 = lat1 * math.pi / 180;
+  final phi2 = lat2 * math.pi / 180;
+  final deltaPhi = (lat2 - lat1) * math.pi / 180;
+  final deltaLambda = (lon2 - lon1) * math.pi / 180;
+
+  final a = math.sin(deltaPhi / 2) * math.sin(deltaPhi / 2) +
+      math.cos(phi1) * math.cos(phi2) *
+      math.sin(deltaLambda / 2) * math.sin(deltaLambda / 2);
+  final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+  return R * c;
+}
+
+double _calculateBearing(double lat1, double lon1, double lat2, double lon2) {
+  final phi1 = lat1 * math.pi / 180;
+  final phi2 = lat2 * math.pi / 180;
+  final deltaLambda = (lon2 - lon1) * math.pi / 180;
+
+  final y = math.sin(deltaLambda) * math.cos(phi2);
+  final x = math.cos(phi1) * math.sin(phi2) -
+      math.sin(phi1) * math.cos(phi2) * math.cos(deltaLambda);
+
+  final bearing = math.atan2(y, x);
+  return (bearing * 180 / math.pi + 360) % 360;
+}
 
 class StreetViewScreen extends ConsumerStatefulWidget {
   final double lat;
   final double lon;
 
-  const StreetViewScreen({
-    super.key,
-    required this.lat,
-    required this.lon,
-  });
+  const StreetViewScreen({Key? key, required this.lat, required this.lon}) : super(key: key);
 
   @override
-  ConsumerState<StreetViewScreen> createState() => _StreetViewScreenState();
+  _StreetViewScreenState createState() => _StreetViewScreenState();
 }
 
 class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
-  StreetViewPanorama? _panoramaInfo;
-  Uint8List? _panoramaImage;
-  bool _isLoading = true;
-  String? _error;
+  String? _foregroundId;
+  String? _backgroundId;
+  bool _isTransitioning = false;
 
   @override
   void initState() {
     super.initState();
-    _loadStreetView();
+    // Foreground ID will be resolved in build() based on lat/lon
   }
 
-  Future<void> _loadStreetView() async {
-    try {
-      final service = ref.read(streetViewServiceProvider);
-      // Fetch panorama metadata for the location
-      final panoInfo = await service.findPanorama(widget.lat, widget.lon);
-      
-      if (panoInfo == null) {
-        if (mounted) {
-          setState(() {
-            _error = "No Street View coverage found for this location.";
-            _isLoading = false;
-          });
-        }
-        return;
-      }
+  void _navigateToNeighbor(String nextId) {
+    if (_isTransitioning) return;
+    
+    // Set background to the new image, trigger state update to start prefetching
+    ref.read(currentPanoramaIdProvider.notifier).updateId(nextId);
+    
+    setState(() {
+      _backgroundId = nextId;
+      _isTransitioning = true;
+    });
 
-      // Download the tiles and stitch them
-      final imageBytes = await service.downloadPanoramaImage(panoInfo.id, zoom: 2);
-      
-      if (imageBytes == null) {
-        if (mounted) {
-          setState(() {
-            _error = "Failed to download Street View image.";
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
+    // Wait for a short duration for the fade transition to happen
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) {
         setState(() {
-          _panoramaInfo = panoInfo;
-          _panoramaImage = imageBytes;
-          _isLoading = false;
+          // The background image is now fully visible, make it the foreground
+          _foregroundId = nextId;
+          _backgroundId = null;
+          _isTransitioning = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  double _calculateBearing(double startLat, double startLng, double destLat, double destLng) {
-    final dLon = (destLng - startLng) * pi / 180;
-    startLat = startLat * pi / 180;
-    destLat = destLat * pi / 180;
-
-    final y = sin(dLon) * cos(destLat);
-    final x = cos(startLat) * sin(destLat) - sin(startLat) * cos(destLat) * cos(dLon);
-    final brng = atan2(y, x);
-
-    return (brng * 180 / pi + 360) % 360;
-  }
-
-  double _normalizeAngle(double angle) {
-    while (angle <= -180) angle += 360;
-    while (angle > 180) angle -= 360;
-    return angle;
-  }
-
-  List<Hotspot> _buildHotspots(List<Building> buildings) {
-    if (_panoramaInfo == null) return [];
-    
-    final hotspots = <Hotspot>[];
-    
-    for (final building in buildings) {
-      final isCollected = building.collectedCount >= building.totalUnits;
-      
-      // Calculate bearing from the street view camera to the building
-      final bearing = _calculateBearing(
-        _panoramaInfo!.lat, _panoramaInfo!.lon,
-        building.lat, building.lng,
-      );
-      
-      // Panorama's center is at _panoramaInfo!.heading
-      // So the relative longitude in the viewer is (bearing - heading)
-      final relativeYaw = _normalizeAngle(bearing - _panoramaInfo!.heading);
-
-      hotspots.add(
-        Hotspot(
-          latitude: 0.0, // Horizon
-          longitude: relativeYaw,
-          width: 120,
-          height: 60,
-          widget: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isCollected ? Colors.green.withOpacity(0.8) : Colors.orange.withOpacity(0.8),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  building.name,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  isCollected ? 'Collected' : 'Pending',
-                  style: const TextStyle(color: Colors.white, fontSize: 10),
-                ),
-              ],
-            ),
-          ),
-        )
-      );
-    }
-    
-    return hotspots;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text("Street View"), backgroundColor: Colors.transparent, elevation: 0),
-        extendBodyBehindAppBar: true,
-        body: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text("Loading 360° Panorama..."),
-            ],
-          ),
-        ),
+    // Watch this to trigger the prefetching logic silently
+    ref.watch(prefetchControllerProvider);
+    
+    final currentId = ref.watch(currentPanoramaIdProvider);
+    final currentNode = currentId != null ? ref.watch(nodeByIdProvider(currentId)) : null;
+
+    if (_foregroundId == null) {
+      final nodesAsync = ref.watch(streetViewNodesProvider);
+      return nodesAsync.when(
+        data: (nodes) {
+          if (nodes.isEmpty) {
+            return const Scaffold(body: Center(child: Text("No panoramas available.")));
+          }
+          
+          StreetViewNode? closestNode;
+          double minDistance = double.infinity;
+          for (var node in nodes) {
+            double dist = _calculateDistance(widget.lat, widget.lon, node.lat, node.lon);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestNode = node;
+            }
+          }
+          
+          if (closestNode != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _foregroundId == null) {
+                ref.read(currentPanoramaIdProvider.notifier).updateId(closestNode!.id);
+                setState(() {
+                  _foregroundId = closestNode!.id;
+                });
+              }
+            });
+          }
+          
+          return const Scaffold(
+            backgroundColor: Colors.black,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        },
+        loading: () => const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator())),
+        error: (err, stack) => Scaffold(backgroundColor: Colors.black, body: Center(child: Text('Error loading panoramas: $err', style: const TextStyle(color: Colors.white)))),
       );
     }
-
-    if (_error != null || _panoramaImage == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text("Street View")),
-        body: Center(child: Text(_error ?? "Unknown error")),
-      );
-    }
-
-    // Watch buildings to draw tags
-    final buildingsAsync = ref.watch(buildingsProvider);
 
     return Scaffold(
+      backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text("Street View"),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20),
       ),
-      body: buildingsAsync.when(
-        data: (buildings) {
-          final hotspots = _buildHotspots(buildings);
+      body: Stack(
+        children: [
+          // Background Layer (loads next image during transition)
+          if (_backgroundId != null)
+            AnimatedScale(
+              scale: _isTransitioning ? 1.0 : 0.8, // Pushes into view
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              child: PanoramaViewer(
+                animSpeed: 0.0,
+                sensorControl: SensorControl.none,
+                sensitivity: 2.5, // Increased sensitivity for easier panning
+                child: Image(
+                  image: CachedNetworkImageProvider('$baseUrl/$_backgroundId.webp'),
+                ),
+              ),
+            ),
           
-          return PanoramaViewer(
-            sensorControl: SensorControl.orientation, // Allows gyro if available
-            hotspots: hotspots,
-            child: Image.memory(_panoramaImage!),
-          );
-        },
-        loading: () => PanoramaViewer(
-          child: Image.memory(_panoramaImage!),
-        ),
-        error: (err, stack) => PanoramaViewer(
-          child: Image.memory(_panoramaImage!),
-        ),
+          // Foreground Layer (fades out during transition)
+          AnimatedOpacity(
+            opacity: _isTransitioning ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+            child: AnimatedScale(
+              scale: _isTransitioning ? 1.5 : 1.0, // Zooms past the camera like Street View
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInCubic,
+              child: PanoramaViewer(
+                animSpeed: 0.0,
+                sensorControl: SensorControl.none,
+                sensitivity: 2.5, // Increased sensitivity for easier panning
+              hotspots: currentNode != null
+                  ? currentNode.neighbors.map((neighborId) {
+                      final allNodes = ref.read(streetViewNodesProvider).value ?? [];
+                      StreetViewNode? neighborNode;
+                      try {
+                        neighborNode = allNodes.firstWhere((n) => n.id == neighborId);
+                      } catch (e) {}
+
+                      double hotspotLongitude = 0.0;
+                      if (neighborNode != null) {
+                        double bearing = _calculateBearing(
+                            currentNode.lat, currentNode.lon,
+                            neighborNode.lat, neighborNode.lon);
+                        
+                        double headingDegrees = currentNode.heading * 180 / math.pi;
+                        hotspotLongitude = bearing - headingDegrees;
+                        hotspotLongitude = (hotspotLongitude + 180) % 360 - 180;
+                      }
+
+                      return Hotspot(
+                        latitude: -25.0, // Look further down on the road
+                        longitude: hotspotLongitude,
+                        width: 120,
+                        height: 120,
+                        widget: GestureDetector(
+                          onTap: () => _navigateToNeighbor(neighborId),
+                          child: Transform(
+                            transform: Matrix4.identity()
+                              ..setEntry(3, 2, 0.002) // Add 3D perspective
+                              ..rotateX(1.2), // Lay it flat on the ground
+                            alignment: FractionalOffset.center,
+                            child: Icon(
+                              Icons.keyboard_double_arrow_up_rounded,
+                              color: Colors.white.withOpacity(0.85),
+                              size: 120,
+                              shadows: const [
+                                Shadow(
+                                  blurRadius: 15.0,
+                                  color: Colors.black87,
+                                  offset: Offset(0, 5),
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList()
+                  : [],
+              child: Image(
+                image: CachedNetworkImageProvider('$baseUrl/$_foregroundId.webp'),
+              ),
+            ),
+          ),
+          ),
+          
+          // Overlay information
+          if (currentNode != null)
+            Positioned(
+              bottom: 40,
+              left: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'ID: ${currentNode.id}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                    if (currentNode.address.isNotEmpty)
+                      Text(
+                        currentNode.address,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
