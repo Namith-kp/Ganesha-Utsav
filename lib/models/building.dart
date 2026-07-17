@@ -11,6 +11,7 @@ class Building {
   final double totalCollected;
   final String createdBy;
   final DateTime createdAt;
+  final DateTime? updatedAt;
 
   Building({
     required this.id,
@@ -23,6 +24,7 @@ class Building {
     required this.totalCollected,
     required this.createdBy,
     required this.createdAt,
+    this.updatedAt,
   });
 
   factory Building.fromMap(Map<String, dynamic> map, String id) {
@@ -37,6 +39,7 @@ class Building {
       totalCollected: (map['totalCollected'] as num?)?.toDouble() ?? 0.0,
       createdBy: map['createdBy'] as String? ?? '',
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -51,6 +54,7 @@ class Building {
       'totalCollected': totalCollected,
       'createdBy': createdBy,
       'createdAt': Timestamp.fromDate(createdAt),
+      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
     };
   }
 }

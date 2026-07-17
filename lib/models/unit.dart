@@ -9,6 +9,7 @@ class Unit {
   final String? collectedBy;
   final DateTime? collectedAt;
   final String? photoBase64;
+  final DateTime? updatedAt;
 
   Unit({
     required this.id,
@@ -19,6 +20,7 @@ class Unit {
     this.collectedBy,
     this.collectedAt,
     this.photoBase64,
+    this.updatedAt,
   });
 
   factory Unit.fromMap(Map<String, dynamic> map, String id) {
@@ -31,6 +33,7 @@ class Unit {
       collectedBy: map['collectedBy'] as String?,
       collectedAt: (map['collectedAt'] as Timestamp?)?.toDate(),
       photoBase64: map['photoBase64'] as String?,
+      updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -43,6 +46,7 @@ class Unit {
       if (collectedBy != null) 'collectedBy': collectedBy,
       if (collectedAt != null) 'collectedAt': Timestamp.fromDate(collectedAt!),
       if (photoBase64 != null) 'photoBase64': photoBase64,
+      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
     };
   }
 }

@@ -10,7 +10,12 @@ import '../providers/map_provider.dart';
 import '../models/building.dart';
 import '../providers/auth_provider.dart';
 import '../services/building_service.dart';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/unit.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:convert';
+import '../widgets/building_bottom_sheet.dart';
+import 'package:flutter_map/flutter_map.dart';
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371e3; // metres
   final phi1 = lat1 * math.pi / 180;
@@ -97,12 +102,26 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     });
   }
 
-  void _showCreateBuildingDialog(BuildContext context, latlong.LatLng point) {
+  void _showCreateBuildingDialog(BuildContext context, latlong.LatLng targetLatLng) {
     final nameController = TextEditingController();
     final unitsController = TextEditingController();
+    List<TextEditingController> unitLabelControllers = [];
     bool isApartment = false;
     bool isSubmitting = false;
-    
+
+    void updateUnitControllers(String value) {
+      final units = int.tryParse(value) ?? 0;
+      if (units > 50) return; // safeguard
+      
+      if (unitLabelControllers.length < units) {
+        for (int i = unitLabelControllers.length; i < units; i++) {
+          unitLabelControllers.add(TextEditingController(text: 'House ${i + 1}'));
+        }
+      } else if (unitLabelControllers.length > units) {
+        unitLabelControllers.length = units;
+      }
+    }
+
     showDialog(
       context: context,
       builder: (ctx) {
@@ -110,30 +129,59 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('Add Building'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+                      ),
+                      const SizedBox(height: 16),
+                      SwitchListTile(
+                        title: const Text('Multi-unit apartment'),
+                        value: isApartment,
+                        onChanged: (val) {
+                          setState(() => isApartment = val);
+                        },
+                      ),
+                      if (isApartment) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: unitsController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Number of Units'),
+                          onChanged: (val) {
+                            setState(() {
+                              updateUnitControllers(val);
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        if (unitLabelControllers.isNotEmpty)
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: unitLabelControllers.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: TextField(
+                                  controller: unitLabelControllers[index],
+                                  decoration: InputDecoration(
+                                    labelText: 'Unit ${index + 1} Name',
+                                    isDense: true,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text('Multi-unit apartment'),
-                    value: isApartment,
-                    onChanged: (val) {
-                      setState(() => isApartment = val);
-                    },
-                  ),
-                  if (isApartment) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: unitsController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Number of Units'),
-                    ),
-                  ],
-                ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -157,17 +205,22 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                     try {
                       if (isApartment) {
                         final units = int.tryParse(unitsController.text) ?? 1;
+                        final labels = unitLabelControllers.map((c) => c.text.trim()).toList();
+                        if (labels.isEmpty) {
+                          for(int i=0; i<units; i++) labels.add('House ${i+1}');
+                        }
+
                         await buildingService.createMultiUnitBuilding(
-                          lat: point.latitude,
-                          lng: point.longitude,
+                          lat: targetLatLng.latitude,
+                          lng: targetLatLng.longitude,
                           name: nameController.text.trim(),
-                          totalUnits: units,
+                          unitLabels: labels,
                           createdBy: authUser.uid,
                         );
                       } else {
                         await buildingService.createSingleUnitBuilding(
-                          lat: point.latitude,
-                          lng: point.longitude,
+                          lat: targetLatLng.latitude,
+                          lng: targetLatLng.longitude,
                           name: nameController.text.trim(),
                           type: 'house',
                           createdBy: authUser.uid,
@@ -196,6 +249,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       }
     );
   }
+
+  // _showBuildingDetailsDialog replaced by shared showBuildingDetailsBottomSheet
 
   List<Hotspot> _buildHotspots(StreetViewNode? currentNode, List<Building> buildings) {
     if (currentNode == null) return [];
@@ -270,9 +325,10 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         var building = data['building'];
         double dist = data['dist'];
         
-        // Calculate scale based on distance: 
-        double scaleFactor = (1.5 - (dist / 16.0) * 0.9).clamp(0.6, 1.5);
-        bool isCollected = building.collectedCount > 0;
+        // Fixed scale to ensure all tags are the same size regardless of where they were created
+        double scaleFactor = 1.0;
+        bool isFullyCollected = building.collectedCount >= building.totalUnits;
+        bool hasCollections = building.collectedCount > 0;
         
         // Calculate 3D Pitch (Vertical Angle)
         double heightAboveCamera = 3.0; 
@@ -288,49 +344,52 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
           widget: Transform.scale(
             scale: scaleFactor,
             child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isCollected ? Colors.green.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
-                    ]
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        building.name,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                        textAlign: TextAlign.center,
-                        maxLines: 2, // Allow name to wrap
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (isCollected && building.totalCollected > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            '₹${building.totalCollected.toStringAsFixed(0)}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
+              child: GestureDetector(
+                onTap: () => showBuildingDetailsBottomSheet(context, ref, building),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isFullyCollected ? Colors.green.withOpacity(0.9) : (hasCollections ? Colors.orange.withOpacity(0.9) : Colors.red.withOpacity(0.9)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
+                      ]
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          building.name,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          textAlign: TextAlign.center,
+                          maxLines: 2, // Allow name to wrap
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        if (hasCollections && building.totalCollected > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '₹${building.totalCollected.toStringAsFixed(0)}',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    color: isFullyCollected ? Colors.green : (hasCollections ? Colors.orange : Colors.red),
+                    size: 30,
+                    shadows: [
+                      Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
                     ],
                   ),
-                ),
-                Icon(
-                  Icons.arrow_drop_down,
-                  color: isCollected ? Colors.green : Colors.orange,
-                  size: 30,
-                  shadows: [
-                    Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           ),
@@ -545,9 +604,9 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
           // Overlay information
           if (currentNode != null && currentNode.address.isNotEmpty)
             Positioned(
-              bottom: 40,
+              bottom: 20,
               left: 20,
-              right: 20,
+              right: 160,
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -566,8 +625,161 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                 ),
               ),
             ),
+            
+          // Minimap
+          if (currentNode != null)
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 4)),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: IgnorePointer(
+                      child: FlutterMap(
+                        key: ValueKey('minimap_${currentNode.id}'),
+                        options: MapOptions(
+                          initialCenter: latlong.LatLng(currentNode.lat, currentNode.lon),
+                          initialZoom: 18.0,
+                          interactionOptions: const InteractionOptions(
+                            flags: InteractiveFlag.none,
+                          ),
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                            userAgentPackageName: 'com.Dcross.ganeshtracker',
+                          ),
+                          MarkerLayer(
+                            markers: buildings.map((building) {
+                              Color pinColor;
+                              if (building.collectedCount == 0) {
+                                pinColor = Colors.red;
+                              } else if (building.collectedCount >= building.totalUnits) {
+                                pinColor = Colors.green;
+                              } else {
+                                pinColor = Colors.orange;
+                              }
+                              return Marker(
+                                point: latlong.LatLng(building.lat, building.lng),
+                                width: 24,
+                                height: 24,
+                                child: Icon(Icons.location_on, color: pinColor, size: 24),
+                              );
+                            }).toList(),
+                          ),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: latlong.LatLng(currentNode.lat, currentNode.lon),
+                                width: 60,
+                                height: 60,
+                                child: ValueListenableBuilder<double>(
+                                  valueListenable: _cameraLongitude,
+                                  builder: (context, cameraLon, child) {
+                                    double headingDegrees = currentNode.heading * (180.0 / math.pi);
+                                    double absoluteBearing = headingDegrees + cameraLon;
+                                    double angleRad = absoluteBearing * (math.pi / 180.0);
+                                    
+                                    return Transform.rotate(
+                                      angle: angleRad,
+                                      child: SizedBox(
+                                        width: 60,
+                                        height: 60,
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          clipBehavior: Clip.none,
+                                          children: [
+                                            // Field of view indicator (blue cone)
+                                            CustomPaint(
+                                              size: const Size(60, 60),
+                                              painter: FieldOfViewPainter(),
+                                            ),
+                                            // Center dot
+                                            Container(
+                                              width: 14,
+                                              height: 14,
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue,
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: Colors.white, width: 2),
+                                                boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+class FieldOfViewPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.height / 2;
+    
+    // Intense blue gradient for visibility
+    final fillPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.blue.withOpacity(0.9),
+          Colors.blue.withOpacity(0.3),
+        ],
+        stops: const [0.3, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+
+    // Subtle border to make it pop against the map
+    final strokePaint = Paint()
+      ..color = Colors.blue.withOpacity(0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    final path = Path();
+    path.moveTo(center.dx, center.dy);
+    // 80 degrees cone for better visibility
+    final startAngle = -130.0 * math.pi / 180.0;
+    final sweepAngle = 80.0 * math.pi / 180.0;
+    
+    path.arcTo(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      sweepAngle,
+      false,
+    );
+    path.close();
+
+    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(path, strokePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

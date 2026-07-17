@@ -5,14 +5,19 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geolocator/geolocator.dart';
 import '../providers/auth_provider.dart';
 import '../providers/map_provider.dart';
+import '../widgets/building_bottom_sheet.dart';
 import '../models/building.dart';
 import '../models/unit.dart';
 import 'street_view_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final double? initialLat;
+  final double? initialLng;
+
+  const HomeScreen({Key? key, this.initialLat, this.initialLng}) : super(key: key);
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -20,6 +25,23 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final MapController _mapController = MapController();
+  String _selectedFilter = 'All'; // 'All', 'Uncollected', 'Pending', 'Completed'
+
+  void _getCurrentLocation() async {
+    // If we have initial coordinates from router, move there immediately
+    if (widget.initialLat != null && widget.initialLng != null) {
+      if (mounted) {
+        _mapController.move(LatLng(widget.initialLat!, widget.initialLng!), 18);
+        return; // Don't fetch current location if we are navigating to a specific building
+      }
+    }
+
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+    } catch (e) {
+      // Handle error
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -103,6 +125,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
             child: const Icon(Icons.my_location),
           ),
+          FloatingActionButton(
+            heroTag: 'tagHereBtn',
+            backgroundColor: Colors.green,
+            onPressed: () async {
+              final pos = ref.read(liveLocationProvider).value;
+              if (pos == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Waiting for location...')),
+                );
+                return;
+              }
+              if (pos.accuracy > 25.0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('GPS accuracy too low (${pos.accuracy.toStringAsFixed(1)}m). Please wait for a better signal.')),
+                );
+                return;
+              }
+              _showCreateBuildingDialog(context, ref, LatLng(pos.latitude, pos.longitude));
+            },
+            child: const Icon(Icons.add_location_alt, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
       body: locationAsync.when(
@@ -113,57 +157,141 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           final initialCenter = LatLng(position.latitude, position.longitude);
 
-          return FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: initialCenter,
-              initialZoom: 18.0, // Zoom in a bit more for building view
-              onTap: (tapPosition, point) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => StreetViewScreen(
-                      lat: point.latitude,
-                      lon: point.longitude,
+          return Stack(
+            children: [
+              FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: initialCenter,
+                  initialZoom: 18.0, // Zoom in a bit more for building view
+                  cameraConstraint: CameraConstraint.contain(
+                    bounds: LatLngBounds(
+                      const LatLng(13.304145, 77.541547),
+                      const LatLng(13.314836, 77.552447),
                     ),
                   ),
-                );
-              },
-              onLongPress: (tapPosition, point) {
-                _showCreateBuildingDialog(context, ref, point);
-              },
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-                userAgentPackageName: 'com.Dcross.ganeshtracker',
-              ),
-              MarkerLayer(
-                markers: buildingsAsync.when(
-                  data: (buildings) => _buildMarkers(context, ref, buildings),
-                  loading: () => [],
-                  error: (err, stack) => [],
-                ),
-              ),
-              MarkerLayer(
-                markers: liveLocationAsync.maybeWhen(
-                  data: (pos) => pos == null ? [] : [
-                    Marker(
-                      point: LatLng(pos.latitude, pos.longitude),
-                      width: 30,
-                      height: 30,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                  onTap: (tapPosition, point) {
+                    final moveBuilding = ref.read(moveBuildingProvider);
+                    if (moveBuilding != null) {
+                      // Admin is moving a building
+                      showDialog(
+                        context: context,
+                        builder: (c) => AlertDialog(
+                          title: const Text('Update Location?'),
+                          content: Text('Move ${moveBuilding.name} to this location?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('CANCEL')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text('UPDATE', style: TextStyle(color: Colors.blue)),
+                            ),
+                          ],
                         ),
-                        child: const Icon(Icons.person, color: Colors.white, size: 18),
+                      ).then((confirm) {
+                        if (confirm == true) {
+                          ref.read(buildingServiceProvider).updateBuildingLocation(moveBuilding.id, point.latitude, point.longitude);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location updated.')));
+                          ref.read(moveBuildingProvider.notifier).setState(null);
+                        }
+                      });
+                      return;
+                    }
+
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => StreetViewScreen(
+                          lat: point.latitude,
+                          lon: point.longitude,
+                        ),
                       ),
-                    ),
-                  ],
-                  orElse: () => [],
+                    );
+                  },
+                  onLongPress: (tapPosition, point) {
+                    if (isAdmin) {
+                      _showCreateBuildingDialog(context, ref, point);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please use the green "Tag Here" button to create a tag at your current location.')),
+                      );
+                    }
+                  },
                 ),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                    userAgentPackageName: 'com.Dcross.ganeshtracker',
+                  ),
+                  MarkerLayer(
+                    markers: buildingsAsync.when(
+                      data: (buildings) => _buildMarkers(context, ref, buildings),
+                      loading: () => [],
+                      error: (err, stack) => [],
+                    ),
+                  ),
+                  MarkerLayer(
+                    markers: liveLocationAsync.maybeWhen(
+                      data: (pos) => pos == null ? [] : [
+                        Marker(
+                          point: LatLng(pos.latitude, pos.longitude),
+                          width: 30,
+                          height: 30,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                            ),
+                            child: const Icon(Icons.person, color: Colors.white, size: 18),
+                          ),
+                        ),
+                      ],
+                      orElse: () => [],
+                    ),
+                  ),
+                ],
+              ),
+              Positioned(
+                top: 10,
+                left: 10,
+                right: 10,
+                child: Consumer(builder: (context, ref, child) {
+                  final moveBuilding = ref.watch(moveBuildingProvider);
+                  if (moveBuilding != null) {
+                    return Card(
+                      color: Colors.blue.shade100,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.touch_app, color: Colors.blue),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text('Tap on the map to move ${moveBuilding.name}')),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => ref.read(moveBuildingProvider.notifier).setState(null),
+                            )
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildFilterChip('All', 'All', Colors.grey),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('Uncollected (Red)', 'Uncollected', Colors.red),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('Pending (Orange)', 'Pending', Colors.orange),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('Completed (Green)', 'Completed', Colors.green),
+                      ],
+                    ),
+                  );
+                }),
               ),
             ],
           );
@@ -174,24 +302,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildFilterChip(String label, String filterValue, Color color) {
+    final isSelected = _selectedFilter == filterValue;
+    return FilterChip(
+      label: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontSize: 12)),
+      selected: isSelected,
+      selectedColor: color,
+      backgroundColor: Colors.white.withOpacity(0.9),
+      checkmarkColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: isSelected ? color : Colors.grey.shade300),
+      ),
+      onSelected: (bool selected) {
+        setState(() {
+          _selectedFilter = filterValue;
+        });
+      },
+    );
+  }
+
   List<Marker> _buildMarkers(BuildContext context, WidgetRef ref, List<Building> buildings) {
-    return buildings.map((building) {
+    return buildings.where((building) {
+      if (_selectedFilter == 'All') return true;
+      if (_selectedFilter == 'Uncollected' && building.collectedCount == 0) return true;
+      if (_selectedFilter == 'Completed' && building.collectedCount >= building.totalUnits) return true;
+      if (_selectedFilter == 'Pending' && building.collectedCount > 0 && building.collectedCount < building.totalUnits) return true;
+      return false;
+    }).map((building) {
       Color pinColor;
       if (building.collectedCount == 0) {
         pinColor = Colors.red;
       } else if (building.collectedCount >= building.totalUnits) {
         pinColor = Colors.green;
       } else {
-        pinColor = Colors.yellow;
+        pinColor = Colors.orange;
       }
 
       return Marker(
         point: LatLng(building.lat, building.lng),
-        width: 60,
-        height: 60,
+        width: 80,
+        height: 80,
         child: GestureDetector(
           onTap: () {
-            _showCollectionBottomSheet(context, ref, building);
+            showBuildingDetailsBottomSheet(context, ref, building);
           },
           child: Column(
             children: [
@@ -219,9 +373,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _showCreateBuildingDialog(BuildContext context, WidgetRef ref, LatLng point) {
     final nameController = TextEditingController();
     final unitsController = TextEditingController();
+    List<TextEditingController> unitLabelControllers = [];
     bool isApartment = false;
     bool isSubmitting = false;
-    
+
+    void updateUnitControllers(String value) {
+      final units = int.tryParse(value) ?? 0;
+      if (units > 50) return; // safeguard
+      
+      if (unitLabelControllers.length < units) {
+        for (int i = unitLabelControllers.length; i < units; i++) {
+          unitLabelControllers.add(TextEditingController(text: 'House ${i + 1}'));
+        }
+      } else if (unitLabelControllers.length > units) {
+        unitLabelControllers.length = units;
+      }
+    }
+
     showDialog(
       context: context,
       builder: (ctx) {
@@ -229,30 +397,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('Add Building'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+                      ),
+                      const SizedBox(height: 16),
+                      SwitchListTile(
+                        title: const Text('Multi-unit apartment'),
+                        value: isApartment,
+                        onChanged: (val) {
+                          setState(() => isApartment = val);
+                        },
+                      ),
+                      if (isApartment) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: unitsController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Number of Units'),
+                          onChanged: (val) {
+                            setState(() {
+                              updateUnitControllers(val);
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        if (unitLabelControllers.isNotEmpty)
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: unitLabelControllers.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: TextField(
+                                  controller: unitLabelControllers[index],
+                                  decoration: InputDecoration(
+                                    labelText: 'Unit ${index + 1} Name',
+                                    isDense: true,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text('Multi-unit apartment'),
-                    value: isApartment,
-                    onChanged: (val) {
-                      setState(() => isApartment = val);
-                    },
-                  ),
-                  if (isApartment) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: unitsController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Number of Units'),
-                    ),
-                  ],
-                ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -273,11 +470,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     try {
                       if (isApartment) {
                         final units = int.tryParse(unitsController.text) ?? 1;
+                        final labels = unitLabelControllers.map((c) => c.text.trim()).toList();
+                        // fallback if empty
+                        if (labels.isEmpty) {
+                          for(int i=0; i<units; i++) labels.add('House ${i+1}');
+                        }
+                        
                         await buildingService.createMultiUnitBuilding(
                           lat: point.latitude,
                           lng: point.longitude,
                           name: nameController.text.trim(),
-                          totalUnits: units,
+                          unitLabels: labels,
                           createdBy: authUser.uid,
                         );
                       } else {
@@ -313,224 +516,5 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building building) {
-    final buildingService = ref.read(buildingServiceProvider);
-    
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StreamBuilder<List<Unit>>(
-          stream: buildingService.streamUnits(building.id),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-            
-            final units = snapshot.data!;
-            if (units.isEmpty) return const Center(child: Text('No units found.'));
-            
-            if (building.totalUnits > 1) {
-              return DraggableScrollableSheet(
-                expand: false,
-                initialChildSize: 0.6,
-                builder: (context, scrollController) {
-                  return Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Text('${building.name} - Units', style: Theme.of(context).textTheme.titleLarge),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: scrollController,
-                          itemCount: units.length,
-                          itemBuilder: (context, index) {
-                            final unit = units[index];
-                            final isCollected = unit.status == 'collected';
-                            return ListTile(
-                              title: Text(unit.unitLabel),
-                              trailing: Chip(
-                                label: Text(isCollected ? 'Collected' : 'Pending', 
-                                  style: TextStyle(color: isCollected ? Colors.white : Colors.black)
-                                ),
-                                backgroundColor: isCollected ? Colors.green : Colors.grey[300],
-                              ),
-                              onTap: () {
-                                _showUnitAmountForm(context, ref, building, unit);
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            } else {
-              // Single unit logic
-              final unit = units.first;
-              return Padding(
-                padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-                child: _buildAmountForm(context, ref, building, unit),
-              );
-            }
-          },
-        );
-      },
-    );
-  }
-
-  void _showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: _buildAmountForm(ctx, ref, building, unit),
-        );
-      },
-    );
-  }
-
-  Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit) {
-    final isAdmin = ref.read(collectorProfileProvider).value?.role == 'admin';
-    final isAlreadyCollected = unit.status == 'collected';
-
-    if (isAlreadyCollected && !isAdmin) {
-      return Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 16),
-            if (unit.photoBase64 != null) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  base64Decode(unit.photoBase64!),
-                  height: 150,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            const Icon(Icons.check_circle, color: Colors.green, size: 64),
-            const SizedBox(height: 16),
-            Text('Amount Collected: ₹${unit.amount}'),
-            const SizedBox(height: 24),
-            const Text('Only admins can edit collected units.', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      );
-    }
-
-    final amountController = TextEditingController(text: isAlreadyCollected ? unit.amount.toString() : '');
-    bool isSubmitting = false;
-    String? photoBase64 = unit.photoBase64;
-
-    return StatefulBuilder(
-      builder: (ctx, setState) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Collect for: ${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              if (photoBase64 != null) ...[
-                Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        base64Decode(photoBase64!),
-                        height: 150,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => setState(() => photoBase64 = null),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: amountController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (₹)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.camera_alt, size: 32, color: Colors.blue),
-                    onPressed: () async {
-                      final picker = ImagePicker();
-                      final image = await picker.pickImage(
-                        source: ImageSource.camera,
-                        imageQuality: 30, // heavy compression
-                        maxWidth: 600,
-                      );
-                      if (image != null) {
-                        final bytes = await image.readAsBytes();
-                        setState(() {
-                          photoBase64 = base64Encode(bytes);
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: isSubmitting ? null : () async {
-                    final amount = double.tryParse(amountController.text) ?? 0.0;
-                    if (amount <= 0) return;
-
-                    final authUser = ref.read(authStateProvider).value;
-                    if (authUser == null) return;
-
-                    setState(() => isSubmitting = true);
-                    
-                    try {
-                      final buildingService = ref.read(buildingServiceProvider);
-                      await buildingService.markUnitCollected(
-                        buildingId: building.id,
-                        unitId: unit.id,
-                        amount: amount,
-                        collectedBy: authUser.uid,
-                        photoBase64: photoBase64,
-                      );
-                      if (ctx.mounted) Navigator.of(ctx).pop();
-                    } catch (e) {
-                       setState(() => isSubmitting = false);
-                       if (ctx.mounted) {
-                         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Error: $e')));
-                       }
-                    }
-                  },
-                  child: isSubmitting 
-                      ? const CircularProgressIndicator()
-                      : Text(isAlreadyCollected ? 'UPDATE AMOUNT' : 'MARK COLLECTED'),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-    );
-  }
+  // _showCollectionBottomSheet replaced by shared showBuildingDetailsBottomSheet
 }

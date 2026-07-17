@@ -33,7 +33,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const HomeScreen(),
+        builder: (context, state) {
+          final lat = double.tryParse(state.uri.queryParameters['lat'] ?? '');
+          final lng = double.tryParse(state.uri.queryParameters['lng'] ?? '');
+          return HomeScreen(initialLat: lat, initialLng: lng);
+        },
       ),
       GoRoute(
         path: '/login',

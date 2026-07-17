@@ -1,11 +1,15 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../providers/map_provider.dart';
 import '../models/building.dart';
+import '../models/unit.dart';
+import '../widgets/building_bottom_sheet.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -16,6 +20,17 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   bool _isExporting = false;
+  Future<List<Map<String, dynamic>>>? _collectionsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCollections();
+  }
+
+  void _loadCollections() {
+    _collectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections();
+  }
 
   Future<void> _exportToCsv() async {
     setState(() => _isExporting = true);
@@ -74,12 +89,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final buildingsAsync = ref.watch(buildingsProvider);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Reports'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              setState(() {
+                _loadCollections();
+              });
+            },
+          ),
           IconButton(
             icon: _isExporting 
                 ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
@@ -89,66 +110,173 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
         ],
       ),
-      body: buildingsAsync.when(
-        data: (buildings) {
-          double totalCollected = 0.0;
-          int totalUnits = 0;
-          int collectedUnits = 0;
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _collectionsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
           
-          for (var b in buildings) {
-            totalCollected += b.totalCollected;
-            totalUnits += b.totalUnits;
-            collectedUnits += b.collectedCount;
+          final collections = snapshot.data ?? [];
+          
+          double totalCollected = 0.0;
+          double todayCollected = 0.0;
+          final now = DateTime.now();
+          final todayStart = DateTime(now.year, now.month, now.day);
+          
+          final List<double> dailyTotals = List.filled(7, 0.0);
+          final List<String> dailyLabels = List.filled(7, '');
+          for(int i=0; i<7; i++) {
+             final d = now.subtract(Duration(days: 6 - i));
+             dailyLabels[i] = '${d.day}/${d.month}';
+          }
+
+          for (var item in collections) {
+            final Unit unit = item['unit'];
+            totalCollected += unit.amount;
+            if (unit.collectedAt != null) {
+               final d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
+               if (d == todayStart) {
+                   todayCollected += unit.amount;
+               }
+               
+               final diffDays = todayStart.difference(d).inDays;
+               if (diffDays >= 0 && diffDays < 7) {
+                  dailyTotals[6 - diffDays] += unit.amount;
+               }
+            }
           }
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Card(
-                elevation: 4,
-                color: Colors.blue.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    children: [
-                      const Text('Total Collected', style: TextStyle(fontSize: 18, color: Colors.blueGrey)),
-                      const SizedBox(height: 8),
-                      Text('₹${totalCollected.toStringAsFixed(2)}', style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.blue)),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
-                            children: [
-                              Text('$collectedUnits / $totalUnits', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                              const Text('Units Collected', style: TextStyle(color: Colors.blueGrey)),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              Text('${buildings.length}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                              const Text('Buildings', style: TextStyle(color: Colors.blueGrey)),
-                            ],
-                          ),
-                        ],
-                      )
-                    ],
+              Row(
+                children: [
+                  Expanded(
+                    child: Card(
+                      color: Colors.blue.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            const Text('Today', style: TextStyle(color: Colors.blueGrey)),
+                            const SizedBox(height: 8),
+                            Text('₹${todayCollected.toStringAsFixed(0)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue)),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Card(
+                      color: Colors.green.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            const Text('Total', style: TextStyle(color: Colors.blueGrey)),
+                            const SizedBox(height: 8),
+                            Text('₹${totalCollected.toStringAsFixed(0)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const Text('Last 7 Days', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: _buildChart(dailyTotals, dailyLabels),
                 ),
               ),
               const SizedBox(height: 24),
-              const Text('Recent Buildings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text('Recent Collections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              ...buildings.take(10).map((b) => ListTile(
-                title: Text(b.name),
-                subtitle: Text('${b.collectedCount} / ${b.totalUnits} units'),
-                trailing: Text('₹${b.totalCollected.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              )),
+              if (collections.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: Text('No collections yet.')),
+                ),
+              ...collections.take(50).map((item) {
+                final Unit unit = item['unit'];
+                final Building building = item['building'];
+                final date = unit.collectedAt;
+                final dateStr = date != null ? '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}' : 'Unknown date';
+                
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: unit.photoBase64 != null 
+                        ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.memory(base64Decode(unit.photoBase64!), width: 50, height: 50, fit: BoxFit.cover))
+                        : const Icon(Icons.image_not_supported, size: 50),
+                    title: Text('${building.name} - ${unit.unitLabel}'),
+                    subtitle: Text(dateStr),
+                    trailing: Text('₹${unit.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                    onTap: () {
+                      showUnitAmountForm(context, ref, building, unit);
+                    },
+                  ),
+                );
+              }),
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+      ),
+    );
+  }
+
+  Widget _buildChart(List<double> dailyTotals, List<String> dailyLabels) {
+    double maxY = dailyTotals.reduce((a, b) => a > b ? a : b);
+    if (maxY == 0) maxY = 100;
+    
+    return AspectRatio(
+      aspectRatio: 1.5,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxY * 1.2,
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  if (value >= 0 && value < 7) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(dailyLabels[value.toInt()], style: const TextStyle(fontSize: 10)),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: const FlGridData(show: false),
+          borderData: FlBorderData(show: false),
+          barGroups: List.generate(7, (i) => BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: dailyTotals[i],
+                color: Colors.blue,
+                width: 16,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ],
+          )),
+        ),
       ),
     );
   }
