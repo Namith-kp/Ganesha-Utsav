@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ganesh Chanda Tracker — Festival Fund Collection</title>
+  <meta name="description" content="A real-time festival fund collection tracker for the Ganesha festival volunteer team. Track door-to-door donations on a live map." />
+  <meta name="color-scheme" content="only light" />
+  <meta name="darkreader-lock" />
+  <meta name="darkreader" content="NO-DARKREADER-PLUGIN" />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet (OpenStreetMap) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Mapbox GL JS removed -->
+
+  <!-- Google Maps JS API (Street View) -->
+  <script>
+    window.svApiReady = false;
+    function onGoogleMapsLoad() { window.svApiReady = true; if(window._svInitPending) window._svInitPending(); }
+  </script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged,
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      doc,
+      onSnapshot,
+      query,
+      orderBy,
+      getDoc,
+      getDocs,
+      addDoc,
+      updateDoc,
+      serverTimestamp,
+      writeBatch,
+      Timestamp,
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // ─── Firebase Config ───────────────────────────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "AIzaSyDQIbIt-KKtgaQyFs6WJaY0NvOTD6pM3ms",
+      authDomain: "ganesha-funds-tracker.firebaseapp.com",
+      projectId: "ganesha-funds-tracker",
+      storageBucket: "ganesha-funds-tracker.firebasestorage.app",
+      messagingSenderId: "442465747713",
+      appId: "1:442465747713:web:034bbe25bd377854d3d100",
+      measurementId: "G-EFSCSMD42H",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // ─── App State ─────────────────────────────────────────────────────────────
+    let currentUser = null;
+    let currentCollector = null;
+    let mapInstance = null;
+    let buildingMarkers = {};
+    let buildingsData = {};
+    let unsubBuildings = null;
+    let activeScreen = "map";
+    let selectedBuilding = null;
+    let filterStatus = "all";
+    let filterStreetOnly = false;
+
+    // ─── Auth State Listener ───────────────────────────────────────────────────
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        currentUser = user;
+        const collectorDoc = await getDoc(doc(db, "collectors", user.uid));
+        if (collectorDoc.exists()) {
+          currentCollector = { id: collectorDoc.id, ...collectorDoc.data() };
+        } else {
+          currentCollector = { id: user.uid, name: user.email, role: "collector" };
+        }
+        showApp();
+      } else {
+        currentUser = null;
+        currentCollector = null;
+        showLogin();
+      }
+    });
+
+    // ─── Show / Hide Screens ───────────────────────────────────────────────────
+    function showLogin() {
+      document.getElementById("login-screen").classList.remove("hidden");
+      document.getElementById("app-shell").classList.add("hidden");
+      if (unsubBuildings) { unsubBuildings(); unsubBuildings = null; }
+    }
+
+    function showApp() {
+      document.getElementById("login-screen").classList.add("hidden");
+      document.getElementById("app-shell").classList.remove("hidden");
+      document.getElementById("user-name-display").textContent = currentCollector?.name || "Collector";
+      if (currentCollector?.role === "admin") {
+        document.getElementById("nav-admin").style.display = "flex";
+      } else {
+        document.getElementById("nav-admin").style.display = "none";
+      }
+      subscribeBuildings();
+      initMap();
+      navigateTo("map");
+    }
+
+    window.updateFilters = function() {
+      filterStatus = document.getElementById('filter-status').value;
+      filterStreetOnly = document.getElementById('filter-street').checked;
+      renderMapMarkers();
+      
+      if (svPanorama) {
+        const pos = svPanorama.getPosition();
+        if (pos) renderSVBadges(svPanorama, pos.lat(), pos.lng());
+      }
+    };
+
+    window.navigateTo = function(screen) {
+      activeScreen = screen;
+      document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+      document.getElementById(`screen-${screen}`).classList.add("active");
+      document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active-nav"));
+      const navBtn = document.getElementById(`nav-${screen}`);
+      if (navBtn) navBtn.classList.add("active-nav");
+
+      // Show filters only on map or nearby
+      const filters = document.getElementById('map-filters');
+      if (filters) {
+        filters.style.display = (screen === 'map' || screen === 'nearby') ? 'flex' : 'none';
+      }
+
+      if (screen === "reports") loadReports();
+      if (screen === "admin") loadAdmin();
+      if (screen === "nearby") loadNearbyView();
+      if (screen === "map" && mapInstance) setTimeout(() => mapInstance.invalidateSize(), 100);
+    };
+
+    // ─── Street View (Google Maps Panorama + building badges) ──────────────
+    let nearbyUserPos = null;
+    let svPanorama = null;
+    let GMAPS_KEY = localStorage.getItem('gmaps_key') || '';
+
+    function loadNearbyView() {
+      if (!GMAPS_KEY) {
+        showGmapsKeySetup();
+        return;
+      }
+      initStreetView();
+    }
+
+    function showGmapsKeySetup() {
+      document.getElementById('nearby-content').innerHTML = `
+        <div class="token-setup">
+          <div class="token-setup-icon">📸</div>
+          <h3 class="token-setup-title">Enable Street View</h3>
+          <p class="token-setup-desc">Street View shows real panoramic photos of streets with your buildings overlaid.<br>Needs a <strong>free</strong> Google Maps API key (with Street View enabled).</p>
+          <ol class="token-steps">
+            <li>Go to <a href="https://console.cloud.google.com/google/maps-apis" target="_blank" class="token-link">Google Cloud Console</a></li>
+            <li>Enable the <strong>Maps JavaScript API</strong> &amp; <strong>Street View Static API</strong></li>
+            <li>Create an API key under <strong>Credentials</strong></li>
+            <li>Paste it below and click Enable</li>
+          </ol>
+          <div class="token-input-row">
+            <input id="gmaps-key-input" class="form-input" placeholder="AIzaSy..." style="flex:1" />
+            <button class="primary-btn" style="width:auto;padding:12px 20px;white-space:nowrap" onclick="saveGmapsKey()">Enable Street View</button>
+          </div>
+          <p id="token-error" class="token-error"></p>
+          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="token-link-btn">→ Get API Key</a>
+        </div>`;
+    }
+
+    window.saveGmapsKey = function() {
+      const key = document.getElementById('gmaps-key-input').value.trim();
+      if (!key.startsWith('AIza')) {
+        document.getElementById('token-error').textContent = '⚠️ Invalid key — should start with AIza';
+        return;
+      }
+      GMAPS_KEY = key;
+      localStorage.setItem('gmaps_key', key);
+      initStreetView();
+    };
+
+    function initStreetView() {
+      const content = document.getElementById('nearby-content');
+      content.innerHTML = `
+        <div id="sv-wrap">
+          <div id="sv-pano"></div>
+          <div class="sv-overlay-tl">
+            <div class="sv-gps-pill" id="sv-gps-pill">
+              <span class="gps-dot"></span>
+              <span id="sv-gps-text">Locating…</span>
+            </div>
+            <button class="sv-add-btn" onclick="addBuildingHere()">📍 Add Building Here</button>
+          </div>
+          <div id="sv-badges"></div>
+          <div class="sv-legend">
+            <span class="sv-legend-item"><span class="sv-dot" style="background:#ef4444"></span>Pending</span>
+            <span class="sv-legend-item"><span class="sv-dot" style="background:#f59e0b"></span>Partial</span>
+            <span class="sv-legend-item"><span class="sv-dot" style="background:#22c55e"></span>Collected</span>
+          </div>
+          <div class="sv-hint">Drag to look around · Click badge to collect</div>
+        </div>`;
+
+      // Load Google Maps JS if not already done
+      if (!window.google?.maps) {
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=onGoogleMapsLoad`;
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+        window._svInitPending = () => createPanorama();
+      } else {
+        createPanorama();
+      }
+    }
+
+    function createPanorama() {
+      // Start at GPS location or Mumbai default
+      const getPos = (callback) => {
+        if (nearbyUserPos) { callback(nearbyUserPos); return; }
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            p => { nearbyUserPos = {lat: p.coords.latitude, lng: p.coords.longitude}; callback(nearbyUserPos); },
+            () => callback({lat: 13.30822, lng: 77.54647}),
+            {enableHighAccuracy: true, timeout: 8000}
+          );
+        } else { callback({lat: 13.30822, lng: 77.54647}); }
+      };
+
+      getPos(({lat, lng}) => {
+        const pill = document.getElementById('sv-gps-text');
+        if (pill) pill.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+        const sv = new google.maps.StreetViewService();
+        sv.getPanorama({location: {lat, lng}, radius: 100, preference: 'nearest'}, (data, status) => {
+          const panoDiv = document.getElementById('sv-pano');
+          if (!panoDiv) return;
+
+          const center = status === 'OK' ? data.location.latLng : new google.maps.LatLng(lat, lng);
+
+          svPanorama = new google.maps.StreetViewPanorama(panoDiv, {
+            position: center,
+            pov: {heading: 0, pitch: 0},
+            zoom: 1,
+            visible: true,
+            addressControl: false,
+            fullscreenControl: false,
+            motionTracking: false,
+            clickToGo: true,
+          });
+
+          if (status !== 'OK') {
+            // No Street View at this spot — show fallback message
+            panoDiv.innerHTML = `
+              <div class="sv-no-coverage">
+                <div style="font-size:52px">📷</div>
+                <h3>No Street View here</h3>
+                <p>Google Street View doesn’t have coverage at your current location.<br>Try moving to a nearby road and refresh.</p>
+                <button class="sv-add-btn" style="margin:20px auto;display:block" onclick="addBuildingHere()">📍 Add Building at My Location</button>
+              </div>`;
+            return;
+          }
+
+          // Overlay building badges
+          renderSVBadges(svPanorama, lat, lng);
+
+          // Update badges on pov change
+          svPanorama.addListener('pov_changed', () => renderSVBadges(svPanorama, lat, lng));
+          svPanorama.addListener('position_changed', () => {
+            const pos = svPanorama.getPosition();
+            renderSVBadges(svPanorama, pos.lat(), pos.lng());
+          });
+        });
+      });
+    }
+
+    window.toggleColorFix = function() {
+      const pano = document.getElementById('sv-pano');
+      if (pano) {
+        pano.classList.toggle('manual-color-fix');
+      }
+    };
+
+    function haversineDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function getBearingDeg(lat1, lng1, lat2, lng2) {
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const y = Math.sin(dLng) * Math.cos(lat2*Math.PI/180);
+      const x = Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180) - Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLng);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    function renderSVBadges(pano, userLat, userLng) {
+      const badgeContainer = document.getElementById('sv-badges');
+      if (!badgeContainer || !pano) return;
+      badgeContainer.innerHTML = '';
+
+      const pov = pano.getPov();
+      const heading = pov.heading;   // 0 = North, 90 = East
+      const pitch = pov.pitch;       // camera tilt, degrees up/down
+      const zoom = pano.getZoom() ?? 1;
+
+      const panoDiv = document.getElementById('sv-pano');
+      const W = panoDiv?.offsetWidth || 800;
+      const H = panoDiv?.offsetHeight || 450;
+
+      // Street View halves its vertical field of view with every zoom level
+      // (zoom 0 ≈ 180°, zoom 1 ≈ 90°, zoom 2 ≈ 45° …). Deriving the FOV from
+      // zoom/pitch — instead of a hardcoded 90° — is what keeps a badge glued
+      // to its real-world building as the user zooms or tilts the camera.
+      const vFov = Math.min(170, 180 / Math.pow(2, zoom));
+      const hFov = Math.min(170, vFov * (W / H));
+      const halfHRad = (hFov / 2) * Math.PI / 180;
+      const halfVRad = (vFov / 2) * Math.PI / 180;
+
+      Object.values(buildingsData).forEach(b => {
+        if (!b.lat || !b.lng) return;
+
+        // Apply Status Filter
+        if (filterStatus === 'pending' && b.collectedCount > 0) return;
+        if (filterStatus === 'done' && b.collectedCount === 0) return;
+
+        const dist = haversineDistance(userLat, userLng, b.lat, b.lng);
+
+        // If 'Nearby Only' is checked, limit to 60m (about one street block).
+        // This stops distant houses from rendering on foreground walls, but doesn't make nearby houses abruptly disappear when you walk.
+        const maxDist = filterStreetOnly ? 60 : 500;
+        if (dist > maxDist) return;
+
+        const bearing = getBearingDeg(userLat, userLng, b.lat, b.lng);
+        let diff = bearing - heading;
+        while (diff > 180) diff -= 360;
+        while (diff < -180) diff += 360;
+
+        // Add a slight buffer to FOV so badges don't abruptly disappear the millisecond they touch the edge of the screen
+        if (Math.abs(diff) > (hFov / 2) + 5) return;
+
+        // Perspective-correct (tan-based) horizontal position — a linear
+        // diff/FOV mapping drifts increasingly off-target away from screen
+        // center, which is what made badges "slide" instead of sitting still.
+        const normX = Math.tan(diff * Math.PI / 180) / Math.tan(halfHRad);
+        const x = (W / 2) + normX * (W / 2);
+
+        // Buildings are assumed roughly at eye-level (horizon); tracking pitch
+        // the same way keeps the tag anchored to the building when the user
+        // looks up/down instead of staying frozen at a fixed screen height.
+        const normY = Math.tan(-pitch * Math.PI / 180) / Math.tan(halfVRad);
+        const y = (H / 2) + normY * (H / 2) - 40; // float slightly above the horizon
+
+        const color = b.collectedCount === 0 ? '#ef4444' :
+                      (b.collectedCount >= b.totalUnits ? '#22c55e' : '#f59e0b');
+        const statusTxt = b.collectedCount === 0 ? 'Pending' :
+                          (b.collectedCount >= b.totalUnits ? '✓ Done' :
+                           `${b.collectedCount}/${b.totalUnits}`);
+
+        // Aggressive depth scaling: shrinks significantly as it gets further away
+        const scale = Math.max(0.35, 1 - (dist / 80)); 
+        // Opacity fading: if it's far away, fade it out to show it's behind objects
+        const opacity = Math.max(0.3, 1 - (dist / 60));
+
+        const badge = document.createElement('div');
+        badge.className = 'sv-badge';
+        badge.style.cssText = `
+          left:${x}px; top:${y}px;
+          transform:scale(${scale}) translateX(-50%);
+          transform-origin: bottom center;
+          opacity: ${opacity};
+        `;
+        badge.innerHTML = `
+          <div class="sv-badge-amount" style="color:${color}; border-color:${color}; box-shadow: 0 4px 16px ${color}33">
+            ₹${(b.totalCollected||0).toLocaleString('en-IN',{maximumFractionDigits:0})}
+          </div>
+          <div class="sv-badge-card">
+            <div class="sv-badge-name">${b.name}</div>
+            <div class="sv-badge-row">
+              <span class="sv-badge-status" style="color:${color}">${statusTxt}</span>
+              <span class="sv-badge-dist">${Math.round(dist)}m</span>
+            </div>
+          </div>
+        `;
+        
+        let badgePressTimer;
+        const startBadgePress = (e) => {
+          badgePressTimer = setTimeout(async () => {
+            const val = prompt(`Quick Add/Edit Collection for ${b.name} (₹):`, b.totalCollected || 0);
+            if (val !== null && !isNaN(val)) {
+              try {
+                // Quick update for single-unit buildings (or override total for multi-unit)
+                const amt = Number(val);
+                await window.updateDoc(window.doc(window.db, "buildings", b.id), {
+                  totalCollected: amt,
+                  collectedCount: amt > 0 ? (b.totalUnits || 1) : 0,
+                  updatedAt: new Date()
+                });
+                window.toast("✅ Collection updated!");
+              } catch(e) { window.toast("Error: " + e.message); }
+            }
+          }, 600);
+        };
+        const cancelBadgePress = () => clearTimeout(badgePressTimer);
+
+        badge.addEventListener('mousedown', startBadgePress);
+        badge.addEventListener('touchstart', startBadgePress);
+        badge.addEventListener('mouseup', cancelBadgePress);
+        badge.addEventListener('touchend', cancelBadgePress);
+        badge.addEventListener('mousemove', cancelBadgePress);
+        badge.addEventListener('touchmove', cancelBadgePress);
+
+        // Normal click moves the Street View camera to the building's location
+        badge.onclick = () => { 
+          cancelBadgePress(); 
+          if (svPanorama) {
+            svPanorama.setPosition({lat: b.lat, lng: b.lng});
+          }
+        };
+        badgeContainer.appendChild(badge);
+      });
+    }
+
+    // Long press on Street View to add building
+    let svLongPressTimer;
+    const svWrap = document.getElementById('nearby-content');
+    svWrap.addEventListener('mousedown', startSVLongPress);
+    svWrap.addEventListener('touchstart', startSVLongPress);
+    svWrap.addEventListener('mouseup', cancelSVLongPress);
+    svWrap.addEventListener('touchend', cancelSVLongPress);
+    svWrap.addEventListener('mousemove', cancelSVLongPress);
+    svWrap.addEventListener('touchmove', cancelSVLongPress);
+
+    function startSVLongPress(e) {
+      if (!svPanorama) return;
+      svLongPressTimer = setTimeout(() => {
+        addBuildingHere();
+      }, 600);
+    }
+    function cancelSVLongPress() {
+      clearTimeout(svLongPressTimer);
+    }
+
+    window.addBuildingHere = function() {
+      const pos = svPanorama ? svPanorama.getPosition() : nearbyUserPos;
+      const latlng = pos ? (pos.lat ? {lat: pos.lat(), lng: pos.lng()} : pos) : null;
+      if (!latlng) { toast('⚠️ Getting your location…'); return; }
+      openAddBuildingModal(latlng);
+    };
+
+    // ─── Map Initialization ────────────────────────────────────────────────────
+    function initMap() {
+      if (mapInstance) return;
+      mapInstance = L.map("leaflet-map", { zoomControl: false }).setView([13.30822, 77.54647], 16);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+        maxZoom: 20,
+      }).addTo(mapInstance);
+      L.control.zoom({ position: "bottomright" }).addTo(mapInstance);
+
+      // Long-press to add building
+      let longPressTimer;
+      mapInstance.on("mousedown touchstart", (e) => {
+        longPressTimer = setTimeout(() => {
+          openAddBuildingModal(e.latlng);
+        }, 600);
+      });
+      mapInstance.on("mouseup touchend mousemove", () => clearTimeout(longPressTimer));
+
+      // Try geolocation
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => mapInstance.setView([pos.coords.latitude, pos.coords.longitude], 18),
+          () => {}
+        );
+      }
+    }
+
+    // ─── Firestore Real-time subscription ──────────────────────────────────────
+    function subscribeBuildings() {
+      if (unsubBuildings) unsubBuildings();
+      const q = query(collection(db, "buildings"), orderBy("createdAt", "desc"));
+      unsubBuildings = onSnapshot(q, (snapshot) => {
+        buildingsData = {};
+        snapshot.forEach((docSnap) => {
+          buildingsData[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+        });
+        renderMapMarkers();
+        if (activeScreen === "reports") loadReports();
+      });
+    }
+
+    // ─── Map Markers ───────────────────────────────────────────────────────────
+    function pinColor(b) {
+      if (b.collectedCount === 0) return "#ef4444";
+      if (b.collectedCount >= b.totalUnits) return "#22c55e";
+      return "#f59e0b";
+    }
+
+    function makePinIcon(color, label) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="50" viewBox="0 0 38 50">
+        <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.4"/></filter>
+        <path d="M19 2C10.7 2 4 8.7 4 17c0 11.3 15 31 15 31s15-19.7 15-31C34 8.7 27.3 2 19 2z"
+          fill="${color}" filter="url(#shadow)" stroke="white" stroke-width="2"/>
+        <circle cx="19" cy="17" r="7" fill="white" opacity="0.85"/>
+        ${label ? `<text x="19" y="21" text-anchor="middle" font-size="8" font-weight="bold" fill="${color}" font-family="Inter,sans-serif">${label}</text>` : ""}
+      </svg>`;
+      return L.divIcon({
+        html: svg,
+        iconSize: [38, 50],
+        iconAnchor: [19, 50],
+        popupAnchor: [0, -50],
+        className: "",
+      });
+    }
+
+    function renderMapMarkers() {
+      // Remove old markers
+      Object.values(buildingMarkers).forEach((m) => m.remove());
+      buildingMarkers = {};
+      if (!mapInstance) return;
+      Object.values(buildingsData).forEach((b) => {
+        if (!b.lat || !b.lng) return;
+
+        // Apply Status Filter
+        if (filterStatus === 'pending' && b.collectedCount > 0) return;
+        if (filterStatus === 'done' && b.collectedCount === 0) return;
+
+        // Apply Distance Filter (This Street Only ~100m)
+        if (filterStreetOnly && nearbyUserPos) {
+           const dist = haversineDistance(nearbyUserPos.lat, nearbyUserPos.lng, b.lat, b.lng);
+           if (dist > 150) return;
+        }
+
+        const color = pinColor(b);
+        const label = b.totalUnits > 1 ? `${b.collectedCount}/${b.totalUnits}` : "";
+        const icon = makePinIcon(color, label);
+        const marker = L.marker([b.lat, b.lng], { icon }).addTo(mapInstance);
+        
+        // Navigate to Street View instead of opening the collection sheet directly
+        marker.on("click", () => {
+          navigateTo('nearby');
+          if (svPanorama) {
+            svPanorama.setPosition({lat: b.lat, lng: b.lng});
+          }
+        });
+        
+        buildingMarkers[b.id] = marker;
+      });
+    }
+
+    // ─── Login ─────────────────────────────────────────────────────────────────
+    window.handleLogin = async function () {
+      const email = document.getElementById("login-email").value.trim();
+      const password = document.getElementById("login-password").value.trim();
+      const btn = document.getElementById("login-btn");
+      const err = document.getElementById("login-error");
+      err.textContent = "";
+      btn.disabled = true;
+      btn.textContent = "Signing in…";
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (e) {
+        err.textContent = e.message;
+        btn.disabled = false;
+        btn.textContent = "Sign In";
+      }
+    };
+
+    window.handleLogout = async function () {
+      await signOut(auth);
+    };
+
+    // ─── Add Building Modal ─────────────────────────────────────────────────────
+    function openAddBuildingModal(latlng) {
+      document.getElementById("new-building-lat").value = latlng.lat;
+      document.getElementById("new-building-lng").value = latlng.lng;
+      document.getElementById("new-building-name").value = "";
+      document.getElementById("new-building-type").value = "house";
+      document.getElementById("new-building-units").value = "1";
+      document.getElementById("new-building-units-row").classList.add("hidden");
+      document.getElementById("add-building-modal").classList.remove("hidden");
+    }
+
+    window.closeAddBuildingModal = function () {
+      document.getElementById("add-building-modal").classList.add("hidden");
+    };
+
+    window.toggleApartmentUnits = function () {
+      const type = document.getElementById("new-building-type").value;
+      const row = document.getElementById("new-building-units-row");
+      if (type === "apartment") {
+        row.classList.remove("hidden");
+      } else {
+        row.classList.add("hidden");
+        document.getElementById("new-building-units").value = "1";
+      }
+    };
+
+    window.submitNewBuilding = async function () {
+      const name = document.getElementById("new-building-name").value.trim();
+      const type = document.getElementById("new-building-type").value;
+      const totalUnits = parseInt(document.getElementById("new-building-units").value) || 1;
+      const lat = parseFloat(document.getElementById("new-building-lat").value);
+      const lng = parseFloat(document.getElementById("new-building-lng").value);
+      if (!name) { alert("Please enter a building name."); return; }
+      if (!currentUser) return;
+
+      const btn = document.getElementById("add-building-save-btn");
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+
+      try {
+        const batch = writeBatch(db);
+        const buildingRef = doc(collection(db, "buildings"));
+        batch.set(buildingRef, {
+          lat, lng, name, type,
+          totalUnits,
+          collectedCount: 0,
+          totalCollected: 0,
+          createdBy: currentUser.uid,
+          createdAt: serverTimestamp(),
+        });
+        for (let i = 1; i <= totalUnits; i++) {
+          const unitRef = doc(collection(db, `buildings/${buildingRef.id}/units`));
+          const label = totalUnits === 1 ? "Main" : (type === "apartment" ? `Unit ${i}` : `Floor ${i}`);
+          batch.set(unitRef, {
+            unitLabel: label,
+            status: "pending",
+            amount: 0,
+            collectedBy: null,
+            collectedAt: null,
+            photoUrl: null,
+          });
+        }
+        await batch.commit();
+        document.getElementById("add-building-modal").classList.add("hidden");
+      } catch (e) {
+        alert("Error: " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Add Building";
+      }
+    };
+
+    // ─── Building Bottom Sheet ──────────────────────────────────────────────────
+    async function openBuildingSheet(buildingId) {
+      selectedBuilding = buildingsData[buildingId];
+      if (!selectedBuilding) return;
+      const sheet = document.getElementById("building-sheet");
+      const title = document.getElementById("sheet-title");
+      const body = document.getElementById("sheet-body");
+      title.textContent = selectedBuilding.name;
+      body.innerHTML = `<div class="spinner-center"><div class="spinner"></div></div>`;
+      sheet.classList.remove("hidden");
+      sheet.classList.add("slide-up");
+
+      const unitsSnap = await getDocs(collection(db, `buildings/${buildingId}/units`));
+      const units = unitsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      if (selectedBuilding.totalUnits === 1) {
+        renderSingleUnitForm(body, selectedBuilding, units[0]);
+      } else {
+        renderUnitList(body, selectedBuilding, units);
+      }
+    }
+
+    window.closeSheet = function () {
+      const sheet = document.getElementById("building-sheet");
+      sheet.classList.remove("slide-up");
+      setTimeout(() => sheet.classList.add("hidden"), 200);
+    };
+
+    function renderUnitList(container, building, units) {
+      const isAdmin = currentCollector?.role === "admin";
+      container.innerHTML = `
+        <p class="sheet-sub">${building.totalUnits} units · ₹${(building.totalCollected || 0).toLocaleString("en-IN")} collected</p>
+        <div class="unit-list">
+          ${units.map((u) => `
+            <div class="unit-row ${u.status === 'collected' ? 'collected' : ''}" onclick="openUnitForm('${building.id}','${u.id}')">
+              <span class="unit-label">${u.unitLabel}</span>
+              <div class="unit-right">
+                ${u.status === "collected" ? `<span class="badge-green">₹${u.amount?.toLocaleString("en-IN")}</span>` : `<span class="badge-red">Pending</span>`}
+                <span class="unit-chevron">›</span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderSingleUnitForm(container, building, unit) {
+      renderUnitFormInContainer(container, building, unit);
+    }
+
+    window.openUnitForm = async function (buildingId, unitId) {
+      const sheet = document.getElementById("building-sheet");
+      const body = document.getElementById("sheet-body");
+      body.innerHTML = `<div class="spinner-center"><div class="spinner"></div></div>`;
+      const unitDoc = await getDoc(doc(db, `buildings/${buildingId}/units/${unitId}`));
+      const unit = { id: unitDoc.id, ...unitDoc.data() };
+      renderUnitFormInContainer(body, buildingsData[buildingId], unit);
+    };
+
+    function renderUnitFormInContainer(container, building, unit) {
+      const isAdmin = currentCollector?.role === "admin";
+      const isCollected = unit?.status === "collected";
+
+      if (isCollected && !isAdmin) {
+        container.innerHTML = `
+          <div class="collected-view">
+            <div class="big-check">✓</div>
+            <p class="collected-label">${unit.unitLabel}</p>
+            <p class="collected-amount">₹${(unit.amount || 0).toLocaleString("en-IN")}</p>
+            <p class="collected-note">Collected · Only admins can edit</p>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="unit-form">
+          <p class="unit-form-title">${unit?.unitLabel || "Unit"}</p>
+          ${isCollected ? `<div class="admin-edit-banner">⚙ Admin Edit Mode</div>` : ""}
+          <label class="form-label">Amount (₹)</label>
+          <input id="unit-amount-input" type="number" class="form-input" placeholder="Enter amount" value="${isCollected ? unit.amount : ""}" />
+          ${isAdmin && isCollected ? `
+            <label class="form-label">Reason for correction</label>
+            <input id="unit-reason-input" type="text" class="form-input" placeholder="Reason for correction" />
+          ` : ""}
+          <button class="primary-btn" onclick="submitUnitCollection('${building.id}','${unit.id}',${isCollected},${isAdmin})">
+            ${isCollected ? "Update Amount" : "Mark Collected"}
+          </button>
+          ${building.totalUnits > 1 ? `<button class="ghost-btn" onclick="openBuildingSheet('${building.id}')">← Back to units</button>` : ""}
+        </div>`;
+    }
+
+    window.submitUnitCollection = async function (buildingId, unitId, isAlreadyCollected, isAdmin) {
+      const amountInput = document.getElementById("unit-amount-input");
+      const amount = parseFloat(amountInput.value);
+      if (!amount || amount <= 0) { alert("Please enter a valid amount."); return; }
+      if (!currentUser) return;
+
+      const btn = document.querySelector(".unit-form .primary-btn");
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+
+      try {
+        const unitRef = doc(db, `buildings/${buildingId}/units/${unitId}`);
+        const buildingRef = doc(db, `buildings/${buildingId}`);
+
+        if (isAlreadyCollected && isAdmin) {
+          // Admin correction — batched write with corrections log
+          const oldDoc = await getDoc(unitRef);
+          const oldAmount = oldDoc.data()?.amount || 0;
+          const reason = document.getElementById("unit-reason-input")?.value || "";
+          const batch = writeBatch(db);
+          batch.update(unitRef, { amount, collectedBy: currentUser.uid, collectedAt: serverTimestamp() });
+          const amountDiff = amount - oldAmount;
+          batch.update(buildingRef, {
+            totalCollected: (buildingsData[buildingId]?.totalCollected || 0) + amountDiff,
+          });
+          const correctionRef = doc(collection(db, "corrections"));
+          batch.set(correctionRef, {
+            unitPath: unitRef.path,
+            fieldChanged: "amount",
+            oldValue: oldAmount,
+            newValue: amount,
+            changedBy: currentUser.uid,
+            changedAt: serverTimestamp(),
+            reason,
+            buildingName: buildingsData[buildingId]?.name || "",
+            unitLabel: oldDoc.data()?.unitLabel || "",
+          });
+          await batch.commit();
+        } else {
+          // New collection
+          const batch = writeBatch(db);
+          batch.update(unitRef, {
+            status: "collected",
+            amount,
+            collectedBy: currentUser.uid,
+            collectedAt: serverTimestamp(),
+          });
+          const bld = buildingsData[buildingId];
+          const newCount = (bld?.collectedCount || 0) + 1;
+          const newTotal = (bld?.totalCollected || 0) + amount;
+          batch.update(buildingRef, { collectedCount: newCount, totalCollected: newTotal });
+          await batch.commit();
+        }
+        closeSheet();
+        toast("✓ Saved successfully!");
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = isAlreadyCollected ? "Update Amount" : "Mark Collected";
+        alert("Error: " + e.message);
+      }
+    };
+
+    // ─── Reports ───────────────────────────────────────────────────────────────
+    async function loadReports() {
+      const container = document.getElementById("reports-content");
+      container.innerHTML = `<div class="spinner-center"><div class="spinner"></div></div>`;
+
+      const buildings = Object.values(buildingsData);
+      let totalCollected = 0, totalUnits = 0, collectedUnits = 0;
+      const collectorTotals = {};
+
+      for (const b of buildings) {
+        totalCollected += b.totalCollected || 0;
+        totalUnits += b.totalUnits || 0;
+        collectedUnits += b.collectedCount || 0;
+      }
+
+      // Fetch collector-wise breakdown if admin
+      const isAdmin = currentCollector?.role === "admin";
+      if (isAdmin) {
+        for (const b of buildings) {
+          const unitsSnap = await getDocs(collection(db, `buildings/${b.id}/units`));
+          unitsSnap.forEach((u) => {
+            const data = u.data();
+            if (data.status === "collected" && data.collectedBy) {
+              if (!collectorTotals[data.collectedBy]) collectorTotals[data.collectedBy] = 0;
+              collectorTotals[data.collectedBy] += data.amount || 0;
+            }
+          });
+        }
+      }
+
+      // Sort buildings: pending first, then partial, then collected
+      const sorted = [...buildings].sort((a, b) => {
+        const scoreA = a.collectedCount === 0 ? 0 : (a.collectedCount >= a.totalUnits ? 2 : 1);
+        const scoreB = b.collectedCount === 0 ? 0 : (b.collectedCount >= b.totalUnits ? 2 : 1);
+        return scoreA - scoreB;
+      });
+
+      const pct = totalUnits > 0 ? Math.round((collectedUnits / totalUnits) * 100) : 0;
+
+      let html = `
+        <div class="reports-summary-grid">
+          <div class="summary-card accent-gold">
+            <div class="summary-icon">₹</div>
+            <div class="summary-val">₹${totalCollected.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+            <div class="summary-lab">Total Collected</div>
+          </div>
+          <div class="summary-card accent-blue">
+            <div class="summary-icon">🏠</div>
+            <div class="summary-val">${buildings.length}</div>
+            <div class="summary-lab">Buildings</div>
+          </div>
+          <div class="summary-card accent-green">
+            <div class="summary-icon">✓</div>
+            <div class="summary-val">${collectedUnits}<span class="summary-total">/${totalUnits}</span></div>
+            <div class="summary-lab">Units Collected</div>
+          </div>
+          <div class="summary-card accent-purple">
+            <div class="summary-icon">%</div>
+            <div class="summary-val">${pct}%</div>
+            <div class="summary-lab">Progress</div>
+          </div>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" style="width:${pct}%"></div>
+        </div>`;
+
+      if (isAdmin && Object.keys(collectorTotals).length > 0) {
+        // Fetch collector names
+        const collectorNames = {};
+        for (const uid of Object.keys(collectorTotals)) {
+          try {
+            const cDoc = await getDoc(doc(db, "collectors", uid));
+            collectorNames[uid] = cDoc.exists() ? cDoc.data().name : uid.slice(0, 8);
+          } catch { collectorNames[uid] = uid.slice(0, 8); }
+        }
+
+        html += `<h3 class="section-heading">Collector Breakdown</h3>
+          <div class="collector-list">
+            ${Object.entries(collectorTotals).sort((a, b) => b[1] - a[1]).map(([uid, amt]) => `
+              <div class="collector-row">
+                <div class="collector-avatar">${(collectorNames[uid] || "?")[0].toUpperCase()}</div>
+                <div class="collector-info">
+                  <div class="collector-name">${collectorNames[uid] || uid}</div>
+                  <div class="collector-amount">₹${amt.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+                </div>
+                <div class="collector-bar-wrap">
+                  <div class="collector-bar" style="width:${totalCollected > 0 ? Math.round((amt/totalCollected)*100) : 0}%"></div>
+                </div>
+              </div>`).join("")}
+          </div>`;
+      }
+
+      html += `<h3 class="section-heading">Buildings</h3>
+        <div class="buildings-list">
+          ${sorted.map((b) => {
+            const statusCls = b.collectedCount === 0 ? "status-pending" : (b.collectedCount >= b.totalUnits ? "status-done" : "status-partial");
+            const statusTxt = b.collectedCount === 0 ? "Pending" : (b.collectedCount >= b.totalUnits ? "Collected" : `${b.collectedCount}/${b.totalUnits}`);
+            return `<div class="building-row" onclick="openBuildingSheet('${b.id}'); navigateTo('map')">
+              <div class="building-row-info">
+                <div class="building-row-name">${b.name}</div>
+                <div class="building-row-type">${b.type} · ${b.totalUnits} unit${b.totalUnits > 1 ? "s" : ""}</div>
+              </div>
+              <div class="building-row-right">
+                <span class="status-badge ${statusCls}">${statusTxt}</span>
+                <span class="building-row-amount">₹${(b.totalCollected || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+        <button class="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    // ─── CSV Export ─────────────────────────────────────────────────────────────
+    window.exportCSV = async function () {
+      const rows = [["Building", "Type", "Unit", "Status", "Amount", "CollectedBy", "CollectedAt"]];
+      for (const b of Object.values(buildingsData)) {
+        const unitsSnap = await getDocs(collection(db, `buildings/${b.id}/units`));
+        unitsSnap.forEach((u) => {
+          const d = u.data();
+          rows.push([
+            b.name, b.type, d.unitLabel, d.status,
+            d.amount || 0, d.collectedBy || "",
+            d.collectedAt ? (d.collectedAt.toDate ? d.collectedAt.toDate().toISOString() : d.collectedAt) : "",
+          ]);
+        });
+      }
+      const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "ganesh_collection_report.csv"; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // ─── Admin Screen ──────────────────────────────────────────────────────────
+    async function loadAdmin() {
+      if (currentCollector?.role !== "admin") return;
+      loadTeamTab();
+    }
+
+    window.switchAdminTab = function (tab) {
+      document.querySelectorAll(".admin-tab-btn").forEach((b) => b.classList.remove("active-tab"));
+      document.getElementById(`admin-tab-${tab}`).classList.add("active-tab");
+      document.querySelectorAll(".admin-tab-panel").forEach((p) => p.classList.add("hidden"));
+      document.getElementById(`admin-panel-${tab}`).classList.remove("hidden");
+      if (tab === "corrections") loadCorrectionsTab();
+      if (tab === "team") loadTeamTab();
+    };
+
+    async function loadTeamTab() {
+      const container = document.getElementById("admin-team-list");
+      container.innerHTML = `<div class="spinner-center"><div class="spinner"></div></div>`;
+      try {
+        const snap = await getDocs(collection(db, "collectors"));
+        if (snap.empty) { container.innerHTML = `<p class="empty-msg">No team members found.</p>`; return; }
+        let html = "";
+        snap.forEach((d) => {
+          const c = { id: d.id, ...d.data() };
+          html += `<div class="team-row">
+            <div class="team-avatar">${(c.name || "?")[0].toUpperCase()}</div>
+            <div class="team-info">
+              <div class="team-name">${c.name || "Unknown"}</div>
+              <div class="team-email">${c.email || c.phone || ""}</div>
+            </div>
+            <select class="role-select" onchange="updateRole('${c.id}', this.value)">
+              <option value="collector" ${c.role === "collector" ? "selected" : ""}>Collector</option>
+              <option value="admin" ${c.role === "admin" ? "selected" : ""}>Admin</option>
+            </select>
+          </div>`;
+        });
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = `<p class="empty-msg">Error: ${e.message}</p>`;
+      }
+    }
+
+    window.updateRole = async function (userId, newRole) {
+      try {
+        await updateDoc(doc(db, "collectors", userId), { role: newRole });
+        toast("Role updated!");
+      } catch (e) { alert("Error: " + e.message); }
+    };
+
+    async function loadCorrectionsTab() {
+      const container = document.getElementById("admin-corrections-list");
+      container.innerHTML = `<div class="spinner-center"><div class="spinner"></div></div>`;
+      try {
+        const q = query(collection(db, "corrections"), orderBy("changedAt", "desc"));
+        const snap = await getDocs(q);
+        if (snap.empty) { container.innerHTML = `<p class="empty-msg">No corrections found.</p>`; return; }
+        let html = "";
+        snap.forEach((d) => {
+          const c = d.data();
+          const at = c.changedAt?.toDate ? c.changedAt.toDate().toLocaleString("en-IN") : "";
+          html += `<div class="correction-card">
+            <div class="correction-title">${c.buildingName || "?"} · ${c.unitLabel || "?"}</div>
+            <div class="correction-detail">₹${c.oldValue} → ₹${c.newValue}</div>
+            <div class="correction-meta">By: ${c.changedBy?.slice(0,8)} · ${at}</div>
+            ${c.reason ? `<div class="correction-reason">"${c.reason}"</div>` : ""}
+          </div>`;
+        });
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = `<p class="empty-msg">Error: ${e.message}</p>`;
+      }
+    }
+
+    // ─── Toast notification ─────────────────────────────────────────────────────
+    function toast(msg) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 3000);
+    }
+
+    // ─── Global nav helper ──────────────────────────────────────────────────────
+    window.navigateTo = navigateTo;
+    window.openBuildingSheet = openBuildingSheet;
+
+    // ─── Login on Enter ─────────────────────────────────────────────────────────
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !document.getElementById("login-screen").classList.contains("hidden")) {
+        window.handleLogin();
+      }
+    });
+  </script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     LOGIN SCREEN
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-bg">
+    <div class="login-blobs">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+      <div class="blob blob-3"></div>
+    </div>
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-icon">🪔</div>
+        <h1 class="login-title">Ganesh Chanda Tracker</h1>
+        <p class="login-subtitle">Festival Fund Collection · Team Portal</p>
+      </div>
+      <div class="login-form">
+        <div class="input-group">
+          <label class="input-label">Email</label>
+          <input id="login-email" type="email" class="login-input" placeholder="collector@team.com" autocomplete="email" />
+        </div>
+        <div class="input-group">
+          <label class="input-label">Password</label>
+          <input id="login-password" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <p id="login-error" class="login-error"></p>
+        <button id="login-btn" class="login-btn" onclick="handleLogin()">Sign In</button>
+        <p class="login-note">Team accounts are created by the admin. Contact your team lead for access.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     APP SHELL
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="app-shell" class="hidden">
+
+  <!-- Top Nav Bar -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="topbar-logo">🪔</span>
+      <span class="topbar-title">Ganesh Tracker</span>
+    </div>
+    <nav class="topbar-nav">
+      <button id="nav-map" class="nav-btn active-nav" onclick="navigateTo('map')">
+        <span class="nav-icon">🗺</span><span class="nav-label">Map</span>
+      </button>
+      <button id="nav-nearby" class="nav-btn" onclick="navigateTo('nearby')">
+        <span class="nav-icon">🚶</span><span class="nav-label">Street View</span>
+      </button>
+      <button id="nav-reports" class="nav-btn" onclick="navigateTo('reports')">
+        <span class="nav-icon">📊</span><span class="nav-label">Reports</span>
+      </button>
+      <button id="nav-admin" class="nav-btn" onclick="navigateTo('admin')" style="display:none">
+        <span class="nav-icon">⚙</span><span class="nav-label">Admin</span>
+      </button>
+    </nav>
+    <div class="topbar-user">
+      <div class="user-avatar-sm">👤</div>
+      <span id="user-name-display" class="user-name-sm"></span>
+      <button class="logout-btn" onclick="handleLogout()" title="Logout">↩</button>
+    </div>
+  </header>
+
+  <!-- Hidden admin nav btn for JS reference -->
+  <span id="admin-nav-btn" style="display:none"></span>
+
+  <!-- Floating Global Map Filters -->
+  <div id="map-filters" class="map-filters">
+    <div class="filter-group">
+      <label>Status:</label>
+      <select id="filter-status" class="filter-select" onchange="window.updateFilters()">
+        <option value="all">All</option>
+        <option value="pending">Pending</option>
+        <option value="done">Done</option>
+      </select>
+    </div>
+    <label class="filter-toggle">
+      <input type="checkbox" id="filter-street" onchange="window.updateFilters()">
+      <span>Nearby Only</span>
+    </label>
+  </div>
+
+  <!-- ── MAP SCREEN ── -->
+  <div id="screen-map" class="screen active">
+    <div id="leaflet-map"></div>
+    <div class="map-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Pending</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>Partial</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#22c55e"></span>Done</span>
+    </div>
+    <div class="map-hint">Hold map to add building</div>
+  </div>
+
+  <!-- ── NEARBY / STREET VIEW SCREEN ── -->
+  <div id="screen-nearby" class="screen">
+    <div class="screen-header">
+      <h2 class="screen-heading">🚶 Street View — Nearby Buildings</h2>
+    </div>
+    <div id="nearby-content" class="screen-scroll-content">
+      <div class="nearby-locating"><div class="spinner"></div><p>Getting your location…</p></div>
+    </div>
+  </div>
+
+  <!-- ── REPORTS SCREEN ── -->
+  <div id="screen-reports" class="screen">
+    <div class="screen-header">
+      <h2 class="screen-heading">Reports</h2>
+    </div>
+    <div id="reports-content" class="screen-scroll-content">
+      <div class="spinner-center"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- ── ADMIN SCREEN ── -->
+  <div id="screen-admin" class="screen">
+    <div class="screen-header">
+      <h2 class="screen-heading">Admin Dashboard</h2>
+    </div>
+    <div class="admin-tabs">
+      <button id="admin-tab-team" class="admin-tab-btn active-tab" onclick="switchAdminTab('team')">👥 Team</button>
+      <button id="admin-tab-corrections" class="admin-tab-btn" onclick="switchAdminTab('corrections')">📋 Corrections</button>
+    </div>
+    <div id="admin-panel-team" class="admin-tab-panel screen-scroll-content">
+      <div id="admin-team-list"><div class="spinner-center"><div class="spinner"></div></div></div>
+    </div>
+    <div id="admin-panel-corrections" class="admin-tab-panel screen-scroll-content hidden">
+      <div id="admin-corrections-list"><div class="spinner-center"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+</div><!-- /app-shell -->
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     ADD BUILDING MODAL
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="add-building-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 class="modal-title">📍 Add Building</h3>
+      <button class="modal-close" onclick="closeAddBuildingModal()">✕</button>
+    </div>
+    <input type="hidden" id="new-building-lat" />
+    <input type="hidden" id="new-building-lng" />
+    <div class="modal-body">
+      <div class="input-group">
+        <label class="input-label">Building Name / Landmark</label>
+        <input id="new-building-name" type="text" class="form-input" placeholder="e.g. Shreeji Apartments" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Building Type</label>
+        <select id="new-building-type" class="form-input" onchange="toggleApartmentUnits()">
+          <option value="house">House</option>
+          <option value="shop">Shop</option>
+          <option value="apartment">Apartment / Multi-unit</option>
+        </select>
+      </div>
+      <div id="new-building-units-row" class="input-group hidden">
+        <label class="input-label">Number of Units</label>
+        <input id="new-building-units" type="number" class="form-input" placeholder="e.g. 12" min="2" value="2" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="ghost-btn" onclick="closeAddBuildingModal()">Cancel</button>
+      <button id="add-building-save-btn" class="primary-btn" onclick="submitNewBuilding()">Add Building</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     BUILDING BOTTOM SHEET
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="building-sheet" class="sheet-overlay hidden" onclick="if(event.target===this) closeSheet()">
+  <div class="sheet-card">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h3 id="sheet-title" class="sheet-title"></h3>
+      <button class="sheet-close" onclick="closeSheet()">✕</button>
+    </div>
+    <div id="sheet-body" class="sheet-body"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     TOAST
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="toast" class="toast"></div>
+
+</body>
+</html>
