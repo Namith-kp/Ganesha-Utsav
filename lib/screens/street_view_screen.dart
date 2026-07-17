@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/street_view_provider.dart';
 import 'dart:math' as math;
 import '../models/street_view_node.dart';
+import 'package:latlong2/latlong.dart' as latlong;
 
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371e3; // metres
@@ -21,19 +22,6 @@ double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   return R * c;
 }
 
-double _calculateBearing(double lat1, double lon1, double lat2, double lon2) {
-  final phi1 = lat1 * math.pi / 180;
-  final phi2 = lat2 * math.pi / 180;
-  final deltaLambda = (lon2 - lon1) * math.pi / 180;
-
-  final y = math.sin(deltaLambda) * math.cos(phi2);
-  final x = math.cos(phi1) * math.sin(phi2) -
-      math.sin(phi1) * math.cos(phi2) * math.cos(deltaLambda);
-
-  final bearing = math.atan2(y, x);
-  return (bearing * 180 / math.pi + 360) % 360;
-}
-
 class StreetViewScreen extends ConsumerStatefulWidget {
   final double lat;
   final double lon;
@@ -48,6 +36,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
   String? _foregroundId;
   String? _backgroundId;
   bool _isTransitioning = false;
+  final ValueNotifier<double> _cameraLongitude = ValueNotifier<double>(0.0);
+  double _initialLongitude = 0.0;
 
   @override
   void initState() {
@@ -55,8 +45,32 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     // Foreground ID will be resolved in build() based on lat/lon
   }
 
+  @override
+  void dispose() {
+    _cameraLongitude.dispose();
+    super.dispose();
+  }
+
   void _navigateToNeighbor(String nextId) {
     if (_isTransitioning) return;
+    
+    // Maintain geographic viewing direction across transitions
+    final currentId = ref.read(currentPanoramaIdProvider);
+    if (currentId != null) {
+      final currentNode = ref.read(nodeByIdProvider(currentId));
+      final nextNode = ref.read(nodeByIdProvider(nextId));
+      if (currentNode != null && nextNode != null) {
+        double currentHeading = currentNode.heading * (180.0 / math.pi);
+        double geographicDirection = _cameraLongitude.value + currentHeading;
+        
+        double nextHeading = nextNode.heading * (180.0 / math.pi);
+        _initialLongitude = geographicDirection - nextHeading;
+        _initialLongitude = (_initialLongitude + 540) % 360 - 180;
+        
+        // Update dial instantly so it doesn't snap
+        _cameraLongitude.value = _initialLongitude;
+      }
+    }
     
     // Set background to the new image, trigger state update to start prefetching
     ref.read(currentPanoramaIdProvider.notifier).updateId(nextId);
@@ -138,17 +152,14 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         children: [
           // Background Layer (loads next image during transition)
           if (_backgroundId != null)
-            AnimatedScale(
-              scale: _isTransitioning ? 1.0 : 0.8, // Pushes into view
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-              child: PanoramaViewer(
-                animSpeed: 0.0,
-                sensorControl: SensorControl.none,
-                sensitivity: 2.5, // Increased sensitivity for easier panning
-                child: Image(
-                  image: CachedNetworkImageProvider('$baseUrl/$_backgroundId.webp'),
-                ),
+            PanoramaViewer(
+              key: ValueKey(_backgroundId),
+              longitude: _initialLongitude,
+              animSpeed: 0.0,
+              sensorControl: SensorControl.none,
+              sensitivity: 2.5,
+              child: Image(
+                image: CachedNetworkImageProvider('$baseUrl/$_backgroundId.webp'),
               ),
             ),
           
@@ -156,72 +167,99 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
           AnimatedOpacity(
             opacity: _isTransitioning ? 0.0 : 1.0,
             duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOut,
-            child: AnimatedScale(
-              scale: _isTransitioning ? 1.5 : 1.0, // Zooms past the camera like Street View
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInCubic,
-              child: PanoramaViewer(
-                animSpeed: 0.0,
-                sensorControl: SensorControl.none,
-                sensitivity: 2.5, // Increased sensitivity for easier panning
-              hotspots: currentNode != null
-                  ? currentNode.neighbors.map((neighborId) {
-                      final allNodes = ref.read(streetViewNodesProvider).value ?? [];
-                      StreetViewNode? neighborNode;
-                      try {
-                        neighborNode = allNodes.firstWhere((n) => n.id == neighborId);
-                      } catch (e) {}
-
-                      double hotspotLongitude = 0.0;
-                      if (neighborNode != null) {
-                        double bearing = _calculateBearing(
-                            currentNode.lat, currentNode.lon,
-                            neighborNode.lat, neighborNode.lon);
-                        
-                        double headingDegrees = currentNode.heading * 180 / math.pi;
-                        hotspotLongitude = bearing - headingDegrees;
-                        hotspotLongitude = (hotspotLongitude + 180) % 360 - 180;
-                      }
-
-                      return Hotspot(
-                        latitude: -25.0, // Look further down on the road
-                        longitude: hotspotLongitude,
-                        width: 120,
-                        height: 120,
-                        widget: GestureDetector(
-                          onTap: () => _navigateToNeighbor(neighborId),
-                          child: Transform(
-                            transform: Matrix4.identity()
-                              ..setEntry(3, 2, 0.002) // Add 3D perspective
-                              ..rotateX(1.2), // Lay it flat on the ground
-                            alignment: FractionalOffset.center,
-                            child: Icon(
-                              Icons.keyboard_double_arrow_up_rounded,
-                              color: Colors.white.withOpacity(0.85),
-                              size: 120,
-                              shadows: const [
-                                Shadow(
-                                  blurRadius: 15.0,
-                                  color: Colors.black87,
-                                  offset: Offset(0, 5),
-                                )
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList()
-                  : [],
+            child: PanoramaViewer(
+              key: ValueKey(_foregroundId),
+              longitude: _initialLongitude,
+              animSpeed: 0.0,
+              sensorControl: SensorControl.none,
+              sensitivity: 2.5,
+              onViewChanged: (longitude, latitude, tilt) {
+                // Update camera longitude for the navigation dial
+                _cameraLongitude.value = longitude;
+              },
               child: Image(
                 image: CachedNetworkImageProvider('$baseUrl/$_foregroundId.webp'),
               ),
             ),
           ),
-          ),
+          
+          // Fixed Bottom Navigation Dial (Google Street View Style)
+          if (currentNode != null && !_isTransitioning)
+            Positioned(
+              bottom: 60,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _cameraLongitude,
+                  builder: (context, cameraLon, child) {
+                    return Transform(
+                      transform: Matrix4.identity()
+                        ..setEntry(3, 2, 0.002) // Perspective distortion
+                        ..rotateX(1.3), // Tilt back to lay flat on the ground
+                      alignment: Alignment.center,
+                      child: SizedBox(
+                        width: 250,
+                        height: 250,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: currentNode.neighbors.map((neighborId) {
+                            final neighborNode = ref.read(nodeByIdProvider(neighborId));
+                            if (neighborNode == null) return const SizedBox.shrink();
+                            
+                            // Calculate geographic bearing
+                            final distance = const latlong.Distance();
+                            final bearing = distance.bearing(
+                              latlong.LatLng(currentNode.lat, currentNode.lon),
+                              latlong.LatLng(neighborNode.lat, neighborNode.lon),
+                            );
+                            
+                            // Convert heading from radians to degrees
+                            double headingDegrees = currentNode.heading * (180.0 / math.pi);
+                            
+                            // Calculate base yaw (where the node is when camera looks straight)
+                            double baseYaw = bearing - headingDegrees;
+                            
+                            // Calculate relative angle on the screen
+                            double relativeAngle = baseYaw - cameraLon;
+                            
+                            // Convert to radians for UI rotation
+                            double angleRad = relativeAngle * (math.pi / 180.0);
+                            
+                            return Transform(
+                              transform: Matrix4.identity()
+                                ..rotateZ(angleRad)
+                                ..translate(0.0, -110.0), // Push outwards by radius
+                              alignment: Alignment.center,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => _navigateToNeighbor(neighborId),
+                                child: Container(
+                                  // Increase hit area slightly
+                                  padding: const EdgeInsets.all(10),
+                                  child: const Icon(
+                                    Icons.keyboard_arrow_up_rounded,
+                                    size: 100,
+                                    color: Colors.white,
+                                    shadows: [
+                                      Shadow(color: Colors.black87, blurRadius: 15, offset: Offset(0, 5))
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           
           // Overlay information
-          if (currentNode != null)
+          if (currentNode != null && currentNode.address.isNotEmpty)
             Positioned(
               bottom: 40,
               left: 20,
@@ -237,14 +275,9 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'ID: ${currentNode.id}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      currentNode.address,
+                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                     ),
-                    if (currentNode.address.isNotEmpty)
-                      Text(
-                        currentNode.address,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                      ),
                   ],
                 ),
               ),

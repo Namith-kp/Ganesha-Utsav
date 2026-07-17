@@ -12,6 +12,9 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Increase ImageCache size to 300 MB to prevent thrashing when crossfading 8K panoramas
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 1024 * 1024 * 300;
+
   runApp(
     const ProviderScope(
       child: MyApp(),
