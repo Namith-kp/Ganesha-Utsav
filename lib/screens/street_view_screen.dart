@@ -8,6 +8,8 @@ import '../models/street_view_node.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import '../providers/map_provider.dart';
 import '../models/building.dart';
+import '../providers/auth_provider.dart';
+import '../services/building_service.dart';
 
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371e3; // metres
@@ -95,11 +97,114 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     });
   }
 
+  void _showCreateBuildingDialog(BuildContext context, latlong.LatLng point) {
+    final nameController = TextEditingController();
+    final unitsController = TextEditingController();
+    bool isApartment = false;
+    bool isSubmitting = false;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Add Building'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text('Multi-unit apartment'),
+                    value: isApartment,
+                    onChanged: (val) {
+                      setState(() => isApartment = val);
+                    },
+                  ),
+                  if (isApartment) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: unitsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Number of Units'),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('CANCEL'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting ? null : () async {
+                    if (nameController.text.trim().isEmpty) return;
+
+                    final authUser = ref.read(authStateProvider).value;
+                    if (authUser == null) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Not logged in')));
+                      return;
+                    }
+
+                    final buildingService = BuildingService();
+                    
+                    setState(() => isSubmitting = true);
+                    
+                    try {
+                      if (isApartment) {
+                        final units = int.tryParse(unitsController.text) ?? 1;
+                        await buildingService.createMultiUnitBuilding(
+                          lat: point.latitude,
+                          lng: point.longitude,
+                          name: nameController.text.trim(),
+                          totalUnits: units,
+                          createdBy: authUser.uid,
+                        );
+                      } else {
+                        await buildingService.createSingleUnitBuilding(
+                          lat: point.latitude,
+                          lng: point.longitude,
+                          name: nameController.text.trim(),
+                          type: 'house',
+                          createdBy: authUser.uid,
+                        );
+                      }
+                      if (ctx.mounted) {
+                        Navigator.of(ctx).pop();
+                      }
+                    } catch (e) {
+                      setState(() => isSubmitting = false);
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Error adding building: $e')),
+                        );
+                      }
+                    }
+                  },
+                  child: isSubmitting 
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                    : const Text('SAVE'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
+  }
+
   List<Hotspot> _buildHotspots(StreetViewNode? currentNode, List<Building> buildings) {
     if (currentNode == null) return [];
     
     List<Hotspot> hotspots = [];
     final distanceCalc = const latlong.Distance();
+    
+    // First, collect data for all buildings within range
+    List<Map<String, dynamic>> visibleData = [];
     
     for (var building in buildings) {
       double dist = distanceCalc(
@@ -107,8 +212,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         latlong.LatLng(building.lat, building.lng),
       );
       
-      // Only show buildings within 100 meters
-      if (dist > 100) continue;
+      // Limit range to 16 meters
+      if (dist > 16) continue;
       
       double bearing = distanceCalc.bearing(
         latlong.LatLng(currentNode.lat, currentNode.lon),
@@ -117,59 +222,121 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       
       double headingDegrees = currentNode.heading * (180.0 / math.pi);
       double relativeYaw = bearing - headingDegrees;
-      
       relativeYaw = (relativeYaw + 540) % 360 - 180;
       
-      bool isCollected = building.collectedCount > 0;
+      visibleData.add({
+        'building': building,
+        'dist': dist,
+        'yaw': relativeYaw,
+      });
+    }
+    
+    // Sort by distance (closest first)
+    visibleData.sort((a, b) => (a['dist'] as double).compareTo(b['dist'] as double));
+    
+    // Filter out occluded buildings and build hotspots
+    List<Map<String, dynamic>> unoccludedData = [];
+    
+    for (var data in visibleData) {
+      double yaw = data['yaw'];
+      double dist = data['dist'];
+      bool occluded = false;
       
-      hotspots.add(
-        Hotspot(
-          latitude: 10.0, // Hover above the house/horizon
-          longitude: relativeYaw,
-          width: 120,
-          height: 80,
-          widget: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isCollected ? Colors.green.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
-                  ]
+      for (var closer in unoccludedData) {
+        double closerYaw = closer['yaw'];
+        double closerDist = closer['dist'];
+        
+        // Calculate dynamic angular width based on distance. 
+        // Assume an average building is 8 meters wide.
+        double angularWidth = (math.atan2(8.0 / 2, closerDist == 0 ? 0.1 : closerDist) * (180.0 / math.pi));
+        
+        // The closer a building is, the wider the angle it blocks. 
+        // We clamp it between 15 and 90 degrees to be safe.
+        double dynamicThreshold = (angularWidth * 1.5).clamp(15.0, 90.0);
+        
+        double diff = (yaw - closerYaw).abs();
+        if (diff > 180) diff = 360 - diff;
+        
+        // If it's behind a closer building and within its angular shadow, hide it!
+        if (diff < dynamicThreshold) {
+          occluded = true;
+          break;
+        }
+      }
+      
+      if (!occluded) {
+        unoccludedData.add(data);
+        
+        var building = data['building'];
+        double dist = data['dist'];
+        
+        // Calculate scale based on distance: 
+        double scaleFactor = (1.5 - (dist / 16.0) * 0.9).clamp(0.6, 1.5);
+        bool isCollected = building.collectedCount > 0;
+        
+        // Calculate 3D Pitch (Vertical Angle)
+        double heightAboveCamera = 3.0; 
+        double pitchRad = math.atan2(heightAboveCamera, dist == 0 ? 0.1 : dist);
+        double pitchDeg = pitchRad * (180.0 / math.pi);
+        
+        hotspots.add(
+          Hotspot(
+            latitude: pitchDeg, // Dynamically set vertical height based on distance!
+            longitude: yaw,
+            width: 250, // Fixed layout width to prevent overflow
+          height: 150, // Fixed layout height to prevent overflow
+          widget: Transform.scale(
+            scale: scaleFactor,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isCollected ? Colors.green.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
+                    ]
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        building.name,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                        textAlign: TextAlign.center,
+                        maxLines: 2, // Allow name to wrap
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (isCollected && building.totalCollected > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '₹${building.totalCollected.toStringAsFixed(0)}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      building.name,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      isCollected ? 'Collected' : 'Pending',
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                    ),
+                Icon(
+                  Icons.arrow_drop_down,
+                  color: isCollected ? Colors.green : Colors.orange,
+                  size: 30,
+                  shadows: [
+                    Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
                   ],
                 ),
-              ),
-              Icon(
-                Icons.arrow_drop_down,
-                color: isCollected ? Colors.green : Colors.orange,
-                size: 30,
-                shadows: [
-                  Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
-                ],
-              ),
-            ],
+              ],
+            ),
+          ),
           ),
         )
       );
+      }
     }
     
     return hotspots;
@@ -262,6 +429,37 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               onViewChanged: (longitude, latitude, tilt) {
                 // Update camera longitude for the navigation dial
                 _cameraLongitude.value = longitude;
+              },
+              onLongPressStart: (longitude, latitude, tilt) {
+                if (currentNode == null) return;
+                
+                // Convert heading from radians to degrees
+                double headingDegrees = currentNode.heading * (180.0 / math.pi);
+                
+                // Absolute bearing of the tap
+                double absoluteBearing = headingDegrees + longitude;
+                
+                // Estimate distance based on pitch (latitude)
+                double distanceInMeters = 6.0; // default for tapping above horizon
+                if (latitude < 0) {
+                  // User tapped below horizon
+                  double pitchRad = latitude.abs() * (math.pi / 180.0);
+                  if (pitchRad > 0.05) { // avoid division by near-zero
+                    distanceInMeters = 2.5 / math.tan(pitchRad);
+                  }
+                }
+                
+                // Clamp distance to reasonable limits
+                distanceInMeters = distanceInMeters.clamp(2.0, 16.0);
+                
+                final distanceCalc = const latlong.Distance();
+                final targetLatLng = distanceCalc.offset(
+                  latlong.LatLng(currentNode.lat, currentNode.lon),
+                  distanceInMeters,
+                  absoluteBearing,
+                );
+                
+                _showCreateBuildingDialog(context, targetLatLng);
               },
               child: Image(
                 image: CachedNetworkImageProvider('$baseUrl/$_foregroundId.webp'),
