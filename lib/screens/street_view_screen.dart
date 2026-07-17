@@ -6,6 +6,8 @@ import '../providers/street_view_provider.dart';
 import 'dart:math' as math;
 import '../models/street_view_node.dart';
 import 'package:latlong2/latlong.dart' as latlong;
+import '../providers/map_provider.dart';
+import '../models/building.dart';
 
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371e3; // metres
@@ -93,6 +95,86 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     });
   }
 
+  List<Hotspot> _buildHotspots(StreetViewNode? currentNode, List<Building> buildings) {
+    if (currentNode == null) return [];
+    
+    List<Hotspot> hotspots = [];
+    final distanceCalc = const latlong.Distance();
+    
+    for (var building in buildings) {
+      double dist = distanceCalc(
+        latlong.LatLng(currentNode.lat, currentNode.lon),
+        latlong.LatLng(building.lat, building.lng),
+      );
+      
+      // Only show buildings within 100 meters
+      if (dist > 100) continue;
+      
+      double bearing = distanceCalc.bearing(
+        latlong.LatLng(currentNode.lat, currentNode.lon),
+        latlong.LatLng(building.lat, building.lng),
+      );
+      
+      double headingDegrees = currentNode.heading * (180.0 / math.pi);
+      double relativeYaw = bearing - headingDegrees;
+      
+      relativeYaw = (relativeYaw + 540) % 360 - 180;
+      
+      bool isCollected = building.collectedCount > 0;
+      
+      hotspots.add(
+        Hotspot(
+          latitude: 10.0, // Hover above the house/horizon
+          longitude: relativeYaw,
+          width: 120,
+          height: 80,
+          widget: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isCollected ? Colors.green.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
+                  ]
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      building.name,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      isCollected ? 'Collected' : 'Pending',
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_drop_down,
+                color: isCollected ? Colors.green : Colors.orange,
+                size: 30,
+                shadows: [
+                  Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
+                ],
+              ),
+            ],
+          ),
+        )
+      );
+    }
+    
+    return hotspots;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Watch this to trigger the prefetching logic silently
@@ -100,6 +182,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     
     final currentId = ref.watch(currentPanoramaIdProvider);
     final currentNode = currentId != null ? ref.watch(nodeByIdProvider(currentId)) : null;
+    final buildingsAsync = ref.watch(buildingsProvider);
+    final buildings = buildingsAsync.value ?? [];
 
     if (_foregroundId == null) {
       final nodesAsync = ref.watch(streetViewNodesProvider);
@@ -158,6 +242,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               animSpeed: 0.0,
               sensorControl: SensorControl.none,
               sensitivity: 2.5,
+              hotspots: _backgroundId != null ? _buildHotspots(ref.read(nodeByIdProvider(_backgroundId!)), buildings) : [],
               child: Image(
                 image: CachedNetworkImageProvider('$baseUrl/$_backgroundId.webp'),
               ),
@@ -173,6 +258,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               animSpeed: 0.0,
               sensorControl: SensorControl.none,
               sensitivity: 2.5,
+              hotspots: _buildHotspots(currentNode, buildings),
               onViewChanged: (longitude, latitude, tilt) {
                 // Update camera longitude for the navigation dial
                 _cameraLongitude.value = longitude;
