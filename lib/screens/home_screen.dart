@@ -5,9 +5,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../providers/auth_provider.dart';
 import '../providers/map_provider.dart';
+import '../widgets/building_bottom_sheet.dart';
 import '../models/building.dart';
 import '../models/unit.dart';
 import '../main.dart';
@@ -16,7 +16,10 @@ import 'panorama_download_screen.dart';
 import '../utils/building_dialogs.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final double? initialLat;
+  final double? initialLng;
+
+  const HomeScreen({Key? key, this.initialLat, this.initialLng}) : super(key: key);
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -24,7 +27,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final MapController _mapController = MapController();
-  bool _isPinningMode = false;
 
   @override
   Widget build(BuildContext context) {
@@ -110,78 +112,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (_isPinningMode) ...[
-            FloatingActionButton.extended(
-              heroTag: 'confirmPinBtn',
-              backgroundColor: Colors.green,
-              icon: const Icon(Icons.check, color: Colors.white),
-              label: const Text('Confirm Pin', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              onPressed: () {
-                final center = _mapController.camera.center;
-                setState(() => _isPinningMode = false);
-                showCreateBuildingDialog(context, ref, center);
-              },
-            ),
-            const SizedBox(height: 16),
-            FloatingActionButton.extended(
-              heroTag: 'cancelPinBtn',
-              backgroundColor: Colors.redAccent,
-              icon: const Icon(Icons.close, color: Colors.white),
-              label: const Text('Cancel', style: TextStyle(color: Colors.white)),
-              onPressed: () {
-                setState(() => _isPinningMode = false);
-              },
-            ),
-          ] else ...[
-            FloatingActionButton(
-              heroTag: 'addPinBtn',
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-              tooltip: 'Add Building at Crosshair',
-              onPressed: () {
-                setState(() => _isPinningMode = true);
-              },
-              child: const Icon(Icons.add_location_alt),
-            ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
-              heroTag: 'streetViewBtn',
-              backgroundColor: AppColors.bgCard,
-              foregroundColor: AppColors.gold,
-              onPressed: () {
-                final pos = ref.read(liveLocationProvider).value;
-                if (pos != null) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PanoramaDownloadScreen(
-                        lat: pos.latitude,
-                        lon: pos.longitude,
-                      ),
+          FloatingActionButton(
+            heroTag: 'streetViewBtn',
+            backgroundColor: Colors.indigo,
+            onPressed: () {
+              final pos = ref.read(liveLocationProvider).value;
+              if (pos != null) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => StreetViewScreen(
+                      lat: pos.latitude,
+                      lon: pos.longitude,
                     ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Waiting for location...')),
-                  );
-                }
-              },
-              child: const Icon(Icons.streetview),
-            ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
-              heroTag: 'myLocationBtn',
-              onPressed: () {
-                final pos = ref.read(liveLocationProvider).value;
-                if (pos != null) {
-                  _mapController.move(
-                    LatLng(pos.latitude, pos.longitude), 
-                    _mapController.camera.zoom,
-                  );
-                }
-              },
-              child: const Icon(Icons.my_location),
-            ),
-          ],
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Waiting for location...')),
+                );
+              }
+            },
+            child: const Icon(Icons.streetview, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            heroTag: 'myLocationBtn',
+            onPressed: () {
+              final pos = ref.read(liveLocationProvider).value;
+              if (pos != null) {
+                _mapController.move(
+                  LatLng(pos.latitude, pos.longitude), 
+                  _mapController.camera.zoom,
+                );
+              }
+            },
+            child: const Icon(Icons.my_location),
+          ),
         ],
       ),
       body: locationAsync.when(
@@ -192,13 +158,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           final initialCenter = LatLng(position.latitude, position.longitude);
 
-          return Stack(
-            children: [
-              FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: initialCenter,
-                  initialZoom: 18.0, // Zoom in a bit more for building view
+          return FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: initialCenter,
+              initialZoom: 18.0, // Zoom in a bit more for building view
               onTap: (tapPosition, point) {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -210,7 +174,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 );
               },
               onLongPress: (tapPosition, point) {
-                showCreateBuildingDialog(context, ref, point);
+                _showCreateBuildingDialog(context, ref, point);
               },
             ),
             children: [
@@ -247,65 +211,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ],
-          ),
-
-          // Filter UI at the top of the map
-          Positioned(
-            top: 16,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final filterStatus = ref.watch(filterStatusProvider);
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.65),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white24),
-                      boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.filter_list, color: Colors.white70, size: 18),
-                        const SizedBox(width: 8),
-                        DropdownButton<FilterStatus>(
-                          value: filterStatus,
-                          dropdownColor: Colors.black87,
-                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                          underline: const SizedBox(),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                          onChanged: (FilterStatus? newValue) {
-                            if (newValue != null) {
-                              ref.read(filterStatusProvider.notifier).setStatus(newValue);
-                            }
-                          },
-                          items: const [
-                            DropdownMenuItem(value: FilterStatus.all, child: Text('All Buildings')),
-                            DropdownMenuItem(value: FilterStatus.pending, child: Text('Pending Only')),
-                            DropdownMenuItem(value: FilterStatus.partial, child: Text('Partially Collected')),
-                            DropdownMenuItem(value: FilterStatus.completed, child: Text('Completed Only')),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              ),
-            ),
-          ),
-          
-          if (_isPinningMode)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 40.0), // Adjust so tip of icon is at center
-                child: Icon(Icons.location_on, size: 40, color: Colors.orange),
-              ),
-            ),
-        ],
-      );
+          );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Error getting location: $err')),
@@ -313,31 +219,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildFilterChip(String label, String filterValue, Color color) {
+    final isSelected = _selectedFilter == filterValue;
+    return FilterChip(
+      label: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontSize: 12)),
+      selected: isSelected,
+      selectedColor: color,
+      backgroundColor: Colors.white.withOpacity(0.9),
+      checkmarkColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: isSelected ? color : Colors.grey.shade300),
+      ),
+      onSelected: (bool selected) {
+        setState(() {
+          _selectedFilter = filterValue;
+        });
+      },
+    );
+  }
+
   List<Marker> _buildMarkers(BuildContext context, WidgetRef ref, List<Building> buildings) {
-    final filterStatus = ref.watch(filterStatusProvider);
-    
-    return buildings.where((building) {
-      if (filterStatus == FilterStatus.pending && building.collectedCount > 0) return false;
-      if (filterStatus == FilterStatus.partial && (building.collectedCount == 0 || building.collectedCount >= building.totalUnits)) return false;
-      if (filterStatus == FilterStatus.completed && building.collectedCount < building.totalUnits) return false;
-      return true;
-    }).map((building) {
+    return buildings.map((building) {
       Color pinColor;
       if (building.collectedCount == 0) {
         pinColor = Colors.red;
       } else if (building.collectedCount >= building.totalUnits) {
         pinColor = Colors.green;
       } else {
-        pinColor = Colors.yellow;
+        pinColor = Colors.orange;
       }
 
       return Marker(
         point: LatLng(building.lat, building.lng),
-        width: 60,
-        height: 60,
+        width: 80,
+        height: 80,
         child: GestureDetector(
           onTap: () {
-            showCollectionBottomSheet(context, ref, building);
+            _showCollectionBottomSheet(context, ref, building);
           },
           child: Column(
             children: [
@@ -368,31 +287,322 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }).toList();
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Nav icon button with hover-style active colour
-// ─────────────────────────────────────────────────────────────────────────────
-class _NavIconButton extends StatelessWidget {
-  const _NavIconButton({
-    required this.icon,
-    required this.onPressed,
-    this.tooltip,
-    this.color,
-  });
-  final IconData icon;
-  final VoidCallback onPressed;
-  final String? tooltip;
-  final Color? color;
+  void _showCreateBuildingDialog(BuildContext context, WidgetRef ref, LatLng point) {
+    final nameController = TextEditingController();
+    final unitsController = TextEditingController();
+    bool isApartment = false;
+    bool isSubmitting = false;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Add Building'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text('Multi-unit apartment'),
+                    value: isApartment,
+                    onChanged: (val) {
+                      setState(() => isApartment = val);
+                    },
+                  ),
+                  if (isApartment) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: unitsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Number of Units'),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('CANCEL'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting ? null : () async {
+                    if (nameController.text.trim().isEmpty) return;
 
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, color: color ?? AppColors.textSecondary, size: 22),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      splashColor: AppColors.gold.withOpacity(0.15),
-      highlightColor: AppColors.gold.withOpacity(0.08),
+                    final authUser = ref.read(authStateProvider).value;
+                    if (authUser == null) return;
+
+                    final buildingService = ref.read(buildingServiceProvider);
+                    
+                    setState(() => isSubmitting = true);
+                    
+                    try {
+                      if (isApartment) {
+                        final units = int.tryParse(unitsController.text) ?? 1;
+                        await buildingService.createMultiUnitBuilding(
+                          lat: point.latitude,
+                          lng: point.longitude,
+                          name: nameController.text.trim(),
+                          totalUnits: units,
+                          createdBy: authUser.uid,
+                        );
+                      } else {
+                        await buildingService.createSingleUnitBuilding(
+                          lat: point.latitude,
+                          lng: point.longitude,
+                          name: nameController.text.trim(),
+                          type: 'house',
+                          createdBy: authUser.uid,
+                        );
+                      }
+                      if (ctx.mounted) {
+                        Navigator.of(ctx).pop();
+                      }
+                    } catch (e) {
+                      setState(() => isSubmitting = false);
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Error adding building: $e')),
+                        );
+                      }
+                    }
+                  },
+                  child: isSubmitting 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('CREATE'),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+  void _showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building building) {
+    final buildingService = ref.read(buildingServiceProvider);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StreamBuilder<List<Unit>>(
+          stream: buildingService.streamUnits(building.id),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+            
+            final units = snapshot.data!;
+            if (units.isEmpty) return const Center(child: Text('No units found.'));
+            
+            if (building.totalUnits > 1) {
+              return DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.6,
+                builder: (context, scrollController) {
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text('${building.name} - Units', style: Theme.of(context).textTheme.titleLarge),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: units.length,
+                          itemBuilder: (context, index) {
+                            final unit = units[index];
+                            final isCollected = unit.status == 'collected';
+                            return ListTile(
+                              title: Text(unit.unitLabel),
+                              trailing: Chip(
+                                label: Text(isCollected ? 'Collected' : 'Pending', 
+                                  style: TextStyle(color: isCollected ? Colors.white : Colors.black)
+                                ),
+                                backgroundColor: isCollected ? Colors.green : Colors.grey[300],
+                              ),
+                              onTap: () {
+                                _showUnitAmountForm(context, ref, building, unit);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            } else {
+              // Single unit logic
+              final unit = units.first;
+              return Padding(
+                padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+                child: _buildAmountForm(context, ref, building, unit),
+              );
+            }
+          },
+        );
+      },
+    );
+  }
+
+  void _showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: _buildAmountForm(ctx, ref, building, unit),
+        );
+      },
+    );
+  }
+
+  Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit) {
+    final isAdmin = ref.read(collectorProfileProvider).value?.role == 'admin';
+    final isAlreadyCollected = unit.status == 'collected';
+
+    if (isAlreadyCollected && !isAdmin) {
+      return Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 16),
+            if (unit.photoBase64 != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  base64Decode(unit.photoBase64!),
+                  height: 150,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            const Icon(Icons.check_circle, color: Colors.green, size: 64),
+            const SizedBox(height: 16),
+            Text('Amount Collected: ₹${unit.amount}'),
+            const SizedBox(height: 24),
+            const Text('Only admins can edit collected units.', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    final amountController = TextEditingController(text: isAlreadyCollected ? unit.amount.toString() : '');
+    bool isSubmitting = false;
+    String? photoBase64 = unit.photoBase64;
+
+    return StatefulBuilder(
+      builder: (ctx, setState) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Collect for: ${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              if (photoBase64 != null) ...[
+                Stack(
+                  alignment: Alignment.topRight,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        base64Decode(photoBase64!),
+                        height: 150,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => setState(() => photoBase64 = null),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: amountController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Amount (₹)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.camera_alt, size: 32, color: Colors.blue),
+                    onPressed: () async {
+                      final picker = ImagePicker();
+                      final image = await picker.pickImage(
+                        source: ImageSource.camera,
+                        imageQuality: 30, // heavy compression
+                        maxWidth: 600,
+                      );
+                      if (image != null) {
+                        final bytes = await image.readAsBytes();
+                        setState(() {
+                          photoBase64 = base64Encode(bytes);
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: isSubmitting ? null : () async {
+                    final amount = double.tryParse(amountController.text) ?? 0.0;
+                    if (amount <= 0) return;
+
+                    final authUser = ref.read(authStateProvider).value;
+                    if (authUser == null) return;
+
+                    setState(() => isSubmitting = true);
+                    
+                    try {
+                      final buildingService = ref.read(buildingServiceProvider);
+                      await buildingService.markUnitCollected(
+                        buildingId: building.id,
+                        unitId: unit.id,
+                        amount: amount,
+                        collectedBy: authUser.uid,
+                        photoBase64: photoBase64,
+                      );
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                    } catch (e) {
+                       setState(() => isSubmitting = false);
+                       if (ctx.mounted) {
+                         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Error: $e')));
+                       }
+                    }
+                  },
+                  child: isSubmitting 
+                      ? const CircularProgressIndicator()
+                      : Text(isAlreadyCollected ? 'UPDATE AMOUNT' : 'MARK COLLECTED'),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
     );
   }
 }

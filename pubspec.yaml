@@ -53,8 +53,6 @@ dependencies:
   image: ^4.8.0
   cached_network_image: ^3.4.1
   http: ^1.6.0
-  google_fonts: ^6.2.1
-  shared_preferences: ^2.3.3
 
 dev_dependencies:
   flutter_test:

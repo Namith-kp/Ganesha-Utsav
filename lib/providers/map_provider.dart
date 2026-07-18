@@ -79,3 +79,15 @@ final currentLocationProvider = FutureProvider<Position?>((ref) async {
     desiredAccuracy: LocationAccuracy.bestForNavigation,
   );
 });
+
+// Used to track if an admin is moving a building's location
+class MoveBuildingNotifier extends Notifier<Building?> {
+  @override
+  Building? build() => null;
+  
+  void setState(Building? building) {
+    state = building;
+  }
+}
+
+final moveBuildingProvider = NotifierProvider<MoveBuildingNotifier, Building?>(MoveBuildingNotifier.new);

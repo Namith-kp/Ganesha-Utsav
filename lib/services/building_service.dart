@@ -12,6 +12,16 @@ class BuildingService {
     });
   }
 
+  // Stream a single building
+  Stream<Building> streamBuilding(String buildingId) {
+    return _firestore.collection('buildings').doc(buildingId).snapshots().map((doc) {
+      if (!doc.exists || doc.data() == null) {
+        throw Exception('Building was deleted');
+      }
+      return Building.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+    });
+  }
+
   // Create a single-unit building (house/shop)
   Future<void> createSingleUnitBuilding({
     required double lat,
@@ -36,6 +46,7 @@ class BuildingService {
       totalCollected: 0.0,
       createdBy: createdBy,
       createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
 
     final unit = Unit(
@@ -44,6 +55,7 @@ class BuildingService {
       unitLabel: 'Main',
       status: 'pending',
       amount: 0.0,
+      updatedAt: DateTime.now(),
     );
 
     batch.set(buildingRef, building.toMap());
@@ -57,7 +69,7 @@ class BuildingService {
     required double lat,
     required double lng,
     required String name,
-    required int totalUnits,
+    required List<String> unitLabels,
     required String createdBy,
   }) async {
     final batch = _firestore.batch();
@@ -70,52 +82,28 @@ class BuildingService {
       lng: lng,
       name: name,
       type: 'apartment',
-      totalUnits: totalUnits,
+      totalUnits: unitLabels.length,
       collectedCount: 0,
       totalCollected: 0.0,
       createdBy: createdBy,
       createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
 
     batch.set(buildingRef, building.toMap());
 
-    for (int i = 1; i <= totalUnits; i++) {
+    for (int i = 0; i < unitLabels.length; i++) {
       final unitRef = buildingRef.collection('units').doc();
       final unit = Unit(
         id: unitRef.id,
         buildingId: buildingRef.id,
-        unitLabel: 'Unit $i',
+        unitLabel: unitLabels[i],
         status: 'pending',
         amount: 0.0,
+        updatedAt: DateTime.now(),
       );
       batch.set(unitRef, unit.toMap());
     }
-
-    await batch.commit();
-  }
-
-  // Add a single unit to an existing building
-  Future<void> addUnit({
-    required String buildingId,
-    required String unitLabel,
-  }) async {
-    final batch = _firestore.batch();
-    final buildingRef = _firestore.collection('buildings').doc(buildingId);
-    final unitRef = buildingRef.collection('units').doc();
-
-    final unit = Unit(
-      id: unitRef.id,
-      buildingId: buildingId,
-      unitLabel: unitLabel,
-      status: 'pending',
-      amount: 0.0,
-    );
-
-    batch.set(unitRef, unit.toMap());
-    batch.update(buildingRef, {
-      'totalUnits': FieldValue.increment(1),
-      if (unitLabel.toLowerCase() != 'main') 'type': 'apartment', // switch type if adding more units
-    });
 
     await batch.commit();
   }
@@ -151,7 +139,7 @@ class BuildingService {
     if (unitDoc.exists && buildingDoc.exists) {
       final unitData = unitDoc.data()!;
       final bool wasCollected = unitData['status'] == 'collected';
-      final double oldAmount = unitData['amount'] ?? 0.0;
+      final double oldAmount = (unitData['amount'] as num?)?.toDouble() ?? 0.0;
       final String buildingName = buildingDoc.data()!['name'] ?? 'Unknown';
 
       if (wasCollected) {
@@ -160,6 +148,7 @@ class BuildingService {
         
         batch.update(buildingRef, {
           'totalCollected': FieldValue.increment(amountDiff),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
 
         // Write correction log
@@ -178,6 +167,7 @@ class BuildingService {
         batch.update(buildingRef, {
           'collectedCount': FieldValue.increment(1),
           'totalCollected': FieldValue.increment(amount),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
       }
 
@@ -186,6 +176,7 @@ class BuildingService {
         'amount': amount,
         'collectedBy': collectedBy,
         'collectedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
         if (photoBase64 != null) 'photoBase64': photoBase64,
       });
 
@@ -206,30 +197,76 @@ class BuildingService {
 
   // Get all flattened collection data for CSV export
   Future<List<Map<String, dynamic>>> getFlattenedCollectionData() async {
-    final List<Map<String, dynamic>> flatData = [];
-    
     final buildingsSnapshot = await _firestore.collection('buildings').get();
     
-    for (final buildingDoc in buildingsSnapshot.docs) {
+    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
       final buildingName = buildingDoc.data()['name'] ?? 'Unknown Building';
-      
       final unitsSnapshot = await buildingDoc.reference.collection('units').get();
       
+      final List<Map<String, dynamic>> buildingData = [];
       for (final unitDoc in unitsSnapshot.docs) {
         final unitData = unitDoc.data();
-        
-        flatData.add({
+        buildingData.add({
           'Building Name': buildingName,
           'Unit Name': unitData['unitLabel'] ?? '',
           'Status': unitData['status'] ?? 'pending',
-          'Amount Collected': unitData['amount'] ?? 0.0,
+          'Amount Collected': (unitData['amount'] as num?)?.toDouble() ?? 0.0,
           'Collected By': unitData['collectedBy'] ?? '',
           'Collected At': (unitData['collectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
         });
       }
-    }
+      return buildingData;
+    });
+
+    final results = await Future.wait(unitFutures);
+    return results.expand((x) => x).toList();
+  }
+
+  // Get detailed collections for the reports UI
+  Future<List<Map<String, dynamic>>> getDetailedCollections() async {
+    // Fetch buildings
+    final buildingsSnapshot = await _firestore.collection('buildings').get();
     
-    return flatData;
+    // Fetch units for all buildings in parallel
+    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+      final building = Building.fromMap(buildingDoc.data(), buildingDoc.id);
+      final unitsSnapshot = await buildingDoc.reference.collection('units').get();
+      
+      final List<Map<String, dynamic>> buildingCollections = [];
+      for (final unitDoc in unitsSnapshot.docs) {
+        final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
+        if (unit.status == 'collected') {
+          buildingCollections.add({
+            'unit': unit,
+            'building': building,
+          });
+        }
+      }
+      return buildingCollections;
+    });
+
+    final results = await Future.wait(unitFutures);
+    final collections = results.expand((x) => x).toList();
+    
+    // Sort descending by date
+    collections.sort((a, b) {
+      final dateA = (a['unit'] as Unit).collectedAt;
+      final dateB = (b['unit'] as Unit).collectedAt;
+      if (dateA == null && dateB == null) return 0;
+      if (dateA == null) return 1;
+      if (dateB == null) return -1;
+      return dateB.compareTo(dateA);
+    });
+    
+    return collections;
+  }
+
+  // Update building name (admin only, verified at UI level)
+  Future<void> updateBuildingName(String buildingId, String newName) async {
+    await _firestore.collection('buildings').doc(buildingId).update({
+      'name': newName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // Admin function: Delete a building and all its units
