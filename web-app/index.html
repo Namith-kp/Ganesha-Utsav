@@ -47,7 +47,6 @@
       serverTimestamp,
       writeBatch,
       Timestamp,
-      deleteField,
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     // ─── Firebase Config ───────────────────────────────────────────────────────
@@ -558,8 +557,7 @@
 
         // Apply Status Filter
         if (filterStatus === 'pending' && b.collectedCount > 0) return;
-        if (filterStatus === 'partial' && (b.collectedCount === 0 || b.collectedCount >= b.totalUnits)) return;
-        if (filterStatus === 'done' && b.collectedCount < (b.totalUnits || 1)) return;
+        if (filterStatus === 'done' && b.collectedCount === 0) return;
 
         // Apply Distance Filter (This Street Only ~100m)
         if (filterStreetOnly && nearbyUserPos) {
@@ -814,7 +812,7 @@
     window.submitUnitCollection = async function (buildingId, unitId, isAlreadyCollected, isAdmin) {
       const amountInput = document.getElementById("unit-amount-input");
       const amount = parseFloat(amountInput.value);
-      if (isNaN(amount) || amount < 0) { alert("Please enter a valid amount."); return; }
+      if (!amount || amount <= 0) { alert("Please enter a valid amount."); return; }
       if (!currentUser) return;
 
       const btn = document.querySelector(".unit-form .primary-btn");
@@ -824,32 +822,6 @@
       try {
         const unitRef = doc(db, `buildings/${buildingId}/units/${unitId}`);
         const buildingRef = doc(db, `buildings/${buildingId}`);
-
-        if (amount === 0) {
-          if (isAlreadyCollected) {
-            const oldDoc = await getDoc(unitRef);
-            const oldAmount = oldDoc.data()?.amount || 0;
-            
-            const batch = writeBatch(db);
-            batch.update(unitRef, {
-              status: "pending",
-              amount: 0,
-              collectedBy: deleteField(),
-              collectedAt: deleteField()
-            });
-            
-            const bld = buildingsData[buildingId];
-            const newCount = Math.max(0, (bld?.collectedCount || 0) - 1);
-            const newTotal = Math.max(0, (bld?.totalCollected || 0) - oldAmount);
-            batch.update(buildingRef, { collectedCount: newCount, totalCollected: newTotal });
-            
-            await batch.commit();
-          }
-          closeSheet();
-          toast("✓ Collection reset!");
-          return;
-        }
-
 
         if (isAlreadyCollected && isAdmin) {
           // Admin correction — batched write with corrections log
@@ -1211,7 +1183,6 @@
       <select id="filter-status" class="filter-select" onchange="window.updateFilters()">
         <option value="all">All</option>
         <option value="pending">Pending</option>
-        <option value="partial">Partial</option>
         <option value="done">Done</option>
       </select>
     </div>
