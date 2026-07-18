@@ -254,17 +254,26 @@ class BuildingService {
 
   // Get all flattened collection data for CSV export
   Future<List<Map<String, dynamic>>> getFlattenedCollectionData() async {
+    // 1. Fetch all buildings in a single query
     final buildingsSnapshot = await _firestore.collection('buildings').get();
-    
-    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
-      final buildingName = buildingDoc.data()['name'] ?? 'Unknown Building';
-      final unitsSnapshot = await buildingDoc.reference.collection('units').get();
+    final Map<String, String> buildingNames = {};
+    for (var doc in buildingsSnapshot.docs) {
+      buildingNames[doc.id] = doc.data()['name'] ?? 'Unknown Building';
+    }
+
+    List<Map<String, dynamic>> buildingData = [];
+
+    try {
+      // 2. Fetch all units across all buildings in a single query
+      final unitsSnapshot = await _firestore.collectionGroup('units').get();
       
-      final List<Map<String, dynamic>> buildingData = [];
       for (final unitDoc in unitsSnapshot.docs) {
         final unitData = unitDoc.data();
+        // unitDoc.reference.parent.parent.id is the buildingId
+        final buildingId = unitDoc.reference.parent.parent?.id ?? '';
+        
         buildingData.add({
-          'Building Name': buildingName,
+          'Building Name': buildingNames[buildingId] ?? 'Unknown Building',
           'Unit Name': unitData['unitLabel'] ?? '',
           'Status': unitData['status'] ?? 'pending',
           'Amount Collected': (unitData['amount'] as num?)?.toDouble() ?? 0.0,
@@ -272,38 +281,86 @@ class BuildingService {
           'Collected At': (unitData['collectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
         });
       }
-      return buildingData;
-    });
+    } catch (e) {
+      print('CollectionGroup query failed for export (index missing?), falling back: $e');
+      final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+        final buildingName = buildingNames[buildingDoc.id] ?? 'Unknown Building';
+        final unitsSnapshot = await buildingDoc.reference.collection('units').get();
+        
+        final List<Map<String, dynamic>> localData = [];
+        for (final unitDoc in unitsSnapshot.docs) {
+          final unitData = unitDoc.data();
+          localData.add({
+            'Building Name': buildingName,
+            'Unit Name': unitData['unitLabel'] ?? '',
+            'Status': unitData['status'] ?? 'pending',
+            'Amount Collected': (unitData['amount'] as num?)?.toDouble() ?? 0.0,
+            'Collected By': unitData['collectedBy'] ?? '',
+            'Collected At': (unitData['collectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+          });
+        }
+        return localData;
+      });
 
-    final results = await Future.wait(unitFutures);
-    return results.expand((x) => x).toList();
+      final results = await Future.wait(unitFutures);
+      buildingData = results.expand((x) => x).toList();
+    }
+
+    return buildingData;
   }
 
   // Get detailed collections for the reports UI
   Future<List<Map<String, dynamic>>> getDetailedCollections() async {
-    // Fetch buildings
+    // 1. Fetch all buildings in a single query
     final buildingsSnapshot = await _firestore.collection('buildings').get();
+    final Map<String, Building> buildingsMap = {};
+    for (var doc in buildingsSnapshot.docs) {
+      buildingsMap[doc.id] = Building.fromMap(doc.data(), doc.id);
+    }
     
-    // Fetch units for all buildings in parallel
-    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
-      final building = Building.fromMap(buildingDoc.data(), buildingDoc.id);
-      final unitsSnapshot = await buildingDoc.reference.collection('units').get();
+    List<Map<String, dynamic>> collections = [];
+    
+    try {
+      // 2. Fetch all collected units across all buildings using a single collectionGroup query
+      final unitsSnapshot = await _firestore.collectionGroup('units')
+          .where('status', isEqualTo: 'collected')
+          .get();
       
-      final List<Map<String, dynamic>> buildingCollections = [];
       for (final unitDoc in unitsSnapshot.docs) {
         final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
-        if (unit.status == 'collected') {
-          buildingCollections.add({
+        final buildingId = unitDoc.reference.parent.parent?.id ?? '';
+        final building = buildingsMap[buildingId];
+        
+        if (building != null) {
+          collections.add({
             'unit': unit,
             'building': building,
           });
         }
       }
-      return buildingCollections;
-    });
+    } catch (e) {
+      // Fallback if collectionGroup index is not created
+      print('CollectionGroup query failed (index missing?), falling back to multi-query: $e');
+      final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+        final building = buildingsMap[buildingDoc.id];
+        final unitsSnapshot = await buildingDoc.reference.collection('units').get();
+        
+        final List<Map<String, dynamic>> buildingCollections = [];
+        for (final unitDoc in unitsSnapshot.docs) {
+          final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
+          if (unit.status == 'collected' && building != null) {
+            buildingCollections.add({
+              'unit': unit,
+              'building': building,
+            });
+          }
+        }
+        return buildingCollections;
+      });
 
-    final results = await Future.wait(unitFutures);
-    final collections = results.expand((x) => x).toList();
+      final results = await Future.wait(unitFutures);
+      collections = results.expand((x) => x).toList();
+    }
     
     // Sort descending by date
     collections.sort((a, b) {

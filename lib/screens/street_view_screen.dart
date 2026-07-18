@@ -684,33 +684,34 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                             markers: [
                               Marker(
                                 point: latlong.LatLng(currentNode.lat, currentNode.lon),
-                                width: 60,
-                                height: 60,
+                                width: 80,
+                                height: 80,
                                 child: ValueListenableBuilder<double>(
                                   valueListenable: _cameraLongitude,
                                   builder: (context, cameraLon, child) {
                                     double headingDegrees = currentNode.heading * (180.0 / math.pi);
-                                    double absoluteBearing = headingDegrees + cameraLon;
+                                    // Reversed cameraLon so pointer follows drag correctly
+                                    double absoluteBearing = headingDegrees - cameraLon;
                                     double angleRad = absoluteBearing * (math.pi / 180.0);
                                     
                                     return Transform.rotate(
                                       angle: angleRad,
                                       child: SizedBox(
-                                        width: 60,
-                                        height: 60,
+                                        width: 80,
+                                        height: 80,
                                         child: Stack(
                                           alignment: Alignment.center,
                                           clipBehavior: Clip.none,
                                           children: [
                                             // Field of view indicator (blue cone)
                                             CustomPaint(
-                                              size: const Size(60, 60),
+                                              size: const Size(80, 80),
                                               painter: FieldOfViewPainter(),
                                             ),
                                             // Center dot
                                             Container(
-                                              width: 14,
-                                              height: 14,
+                                              width: 16,
+                                              height: 16,
                                               decoration: BoxDecoration(
                                                 color: Colors.blue,
                                                 shape: BoxShape.circle,
@@ -746,25 +747,20 @@ class FieldOfViewPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.height / 2;
     
-    // Intense blue gradient for visibility
+    // Solid blue for maximum visibility
     final fillPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.blue.withOpacity(0.9),
-          Colors.blue.withOpacity(0.3),
-        ],
-        stops: const [0.3, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
+      ..color = Colors.blue.withOpacity(0.7)
+      ..style = PaintingStyle.fill;
 
-    // Subtle border to make it pop against the map
+    // Bright white border
     final strokePaint = Paint()
-      ..color = Colors.blue.withOpacity(0.8)
+      ..color = Colors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = 2.5;
 
     final path = Path();
     path.moveTo(center.dx, center.dy);
-    // 80 degrees cone for better visibility
+    // 80 degrees cone for better visibility, pointing UP (-90 degrees)
     final startAngle = -130.0 * math.pi / 180.0;
     final sweepAngle = 80.0 * math.pi / 180.0;
     

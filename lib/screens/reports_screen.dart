@@ -6,10 +6,12 @@ import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:go_router/go_router.dart';
 import '../providers/map_provider.dart';
 import '../models/building.dart';
 import '../models/unit.dart';
 import '../widgets/building_bottom_sheet.dart';
+import 'street_view_screen.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -221,7 +223,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     subtitle: Text(dateStr),
                     trailing: Text('₹${unit.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
                     onTap: () {
-                      showUnitAmountForm(context, ref, building, unit);
+                      _showReportItemPreview(context, ref, building, unit, dateStr);
                     },
                   ),
                 );
@@ -229,6 +231,93 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  void _showReportItemPreview(BuildContext context, WidgetRef ref, Building building, Unit unit, String dateStr) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${building.name} - ${unit.unitLabel}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              if (unit.photoBase64 != null)
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(base64Decode(unit.photoBase64!), height: 200, fit: BoxFit.cover),
+                  ),
+                ),
+              if (unit.photoBase64 != null) const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person),
+                title: const Text('Collected by'),
+                subtitle: Text(unit.collectedBy ?? 'Unknown'),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.access_time),
+                title: const Text('Date & Time'),
+                subtitle: Text(dateStr),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.currency_rupee),
+                title: const Text('Amount'),
+                subtitle: Text('₹${unit.amount}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)),
+              ),
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Edit'),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      showUnitAmountForm(context, ref, building, unit);
+                    },
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.map),
+                    label: const Text('2D Map'),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      context.go('/?lat=${building.lat}&lng=${building.lng}');
+                    },
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.streetview),
+                    label: const Text('Street View'),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      // Import is needed if we use StreetViewScreen directly, or we can use Navigator
+                      import_ar(context, building.lat, building.lng);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void import_ar(BuildContext context, double lat, double lng) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StreetViewScreen(lat: lat, lon: lng),
       ),
     );
   }
@@ -281,3 +370,4 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 }
+
