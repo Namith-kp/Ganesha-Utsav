@@ -2,6 +2,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/building_service.dart';
 import '../models/building.dart';
+import '../models/unit.dart';
+
+enum FilterStatus { all, pending, partial, completed }
+
+class FilterStatusNotifier extends Notifier<FilterStatus> {
+  @override
+  FilterStatus build() => FilterStatus.all;
+
+  void setStatus(FilterStatus status) {
+    state = status;
+  }
+}
+
+final filterStatusProvider = NotifierProvider<FilterStatusNotifier, FilterStatus>(() {
+  return FilterStatusNotifier();
+});
 
 final buildingServiceProvider = Provider<BuildingService>((ref) {
   return BuildingService();
@@ -10,6 +26,11 @@ final buildingServiceProvider = Provider<BuildingService>((ref) {
 final buildingsProvider = StreamProvider<List<Building>>((ref) {
   final buildingService = ref.watch(buildingServiceProvider);
   return buildingService.streamBuildings();
+});
+
+final buildingUnitsProvider = StreamProvider.family<List<Unit>, String>((ref, buildingId) {
+  final buildingService = ref.watch(buildingServiceProvider);
+  return buildingService.streamUnits(buildingId);
 });
 
 final locationPermissionProvider = FutureProvider<bool>((ref) async {

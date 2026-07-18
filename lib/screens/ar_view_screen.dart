@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +71,15 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('AR Street View')),
+        body: const Center(
+          child: Text('AR Street View is available only in the mobile app.'),
+        ),
+      );
+    }
+
     final locationAsync = ref.watch(liveLocationProvider);
     final buildingsAsync = ref.watch(buildingsProvider);
 

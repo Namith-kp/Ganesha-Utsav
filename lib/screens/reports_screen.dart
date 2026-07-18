@@ -1,17 +1,14 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:go_router/go_router.dart';
 import '../providers/map_provider.dart';
 import '../models/building.dart';
 import '../models/unit.dart';
 import '../widgets/building_bottom_sheet.dart';
-import 'street_view_screen.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -62,19 +59,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       // Convert to CSV string
       String csv = const CsvEncoder().convert(csvData);
       
-      // Get temporary directory
-      final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/collections_report.csv';
-      
-      // Write to file
-      final file = File(path);
-      await file.writeAsString(csv);
-      
-      // Share file
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(path)], 
-        text: 'Ganesha Funds Collection Report',
-      ));
+      // Export and share the CSV file
+      await exportCsv(csv);
 
     } catch (e) {
       if (mounted) {
