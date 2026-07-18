@@ -267,8 +267,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         latlong.LatLng(building.lat, building.lng),
       );
       
-      // Limit range to 16 meters
-      if (dist > 16) continue;
+      // Limit range to 40 meters so tags don't disappear when moving between nearby nodes
+      if (dist > 40) continue;
       
       double bearing = distanceCalc.bearing(
         latlong.LatLng(currentNode.lat, currentNode.lon),
