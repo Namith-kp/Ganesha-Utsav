@@ -108,6 +108,63 @@ class BuildingService {
     await batch.commit();
   }
 
+  // Add a new unit to an existing building
+  Future<void> addUnitToBuilding(String buildingId, String unitLabel) async {
+    final batch = _firestore.batch();
+    
+    final buildingRef = _firestore.collection('buildings').doc(buildingId);
+    final unitRef = buildingRef.collection('units').doc();
+    
+    final unit = Unit(
+      id: unitRef.id,
+      buildingId: buildingId,
+      unitLabel: unitLabel,
+      status: 'pending',
+      amount: 0.0,
+      updatedAt: DateTime.now(),
+    );
+    
+    batch.set(unitRef, unit.toMap());
+    
+    // Increment total units
+    batch.update(buildingRef, {
+      'totalUnits': FieldValue.increment(1),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    await batch.commit();
+  }
+
+  // Delete a building and its units
+  Future<void> deleteBuilding(String buildingId) async {
+    final batch = _firestore.batch();
+    
+    // Get all units to delete them
+    final unitsSnapshot = await _firestore
+        .collection('buildings')
+        .doc(buildingId)
+        .collection('units')
+        .get();
+        
+    for (var doc in unitsSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    
+    // Delete the building itself
+    batch.delete(_firestore.collection('buildings').doc(buildingId));
+    
+    await batch.commit();
+  }
+
+  // Update building location
+  Future<void> updateBuildingLocation(String buildingId, double lat, double lng) async {
+    await _firestore.collection('buildings').doc(buildingId).update({
+      'lat': lat,
+      'lng': lng,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // Get units for a specific building
   Stream<List<Unit>> streamUnits(String buildingId) {
     return _firestore
@@ -197,26 +254,17 @@ class BuildingService {
 
   // Get all flattened collection data for CSV export
   Future<List<Map<String, dynamic>>> getFlattenedCollectionData() async {
-    // 1. Fetch all buildings in a single query
     final buildingsSnapshot = await _firestore.collection('buildings').get();
-    final Map<String, String> buildingNames = {};
-    for (var doc in buildingsSnapshot.docs) {
-      buildingNames[doc.id] = doc.data()['name'] ?? 'Unknown Building';
-    }
-
-    List<Map<String, dynamic>> buildingData = [];
-
-    try {
-      // 2. Fetch all units across all buildings in a single query
-      final unitsSnapshot = await _firestore.collectionGroup('units').get();
+    
+    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+      final buildingName = buildingDoc.data()['name'] ?? 'Unknown Building';
+      final unitsSnapshot = await buildingDoc.reference.collection('units').get();
       
+      final List<Map<String, dynamic>> buildingData = [];
       for (final unitDoc in unitsSnapshot.docs) {
         final unitData = unitDoc.data();
-        // unitDoc.reference.parent.parent.id is the buildingId
-        final buildingId = unitDoc.reference.parent.parent?.id ?? '';
-        
         buildingData.add({
-          'Building Name': buildingNames[buildingId] ?? 'Unknown Building',
+          'Building Name': buildingName,
           'Unit Name': unitData['unitLabel'] ?? '',
           'Status': unitData['status'] ?? 'pending',
           'Amount Collected': (unitData['amount'] as num?)?.toDouble() ?? 0.0,
@@ -224,86 +272,38 @@ class BuildingService {
           'Collected At': (unitData['collectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
         });
       }
-    } catch (e) {
-      print('CollectionGroup query failed for export (index missing?), falling back: $e');
-      final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
-        final buildingName = buildingNames[buildingDoc.id] ?? 'Unknown Building';
-        final unitsSnapshot = await buildingDoc.reference.collection('units').get();
-        
-        final List<Map<String, dynamic>> localData = [];
-        for (final unitDoc in unitsSnapshot.docs) {
-          final unitData = unitDoc.data();
-          localData.add({
-            'Building Name': buildingName,
-            'Unit Name': unitData['unitLabel'] ?? '',
-            'Status': unitData['status'] ?? 'pending',
-            'Amount Collected': (unitData['amount'] as num?)?.toDouble() ?? 0.0,
-            'Collected By': unitData['collectedBy'] ?? '',
-            'Collected At': (unitData['collectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
-          });
-        }
-        return localData;
-      });
+      return buildingData;
+    });
 
-      final results = await Future.wait(unitFutures);
-      buildingData = results.expand((x) => x).toList();
-    }
-
-    return buildingData;
+    final results = await Future.wait(unitFutures);
+    return results.expand((x) => x).toList();
   }
 
   // Get detailed collections for the reports UI
   Future<List<Map<String, dynamic>>> getDetailedCollections() async {
-    // 1. Fetch all buildings in a single query
+    // Fetch buildings
     final buildingsSnapshot = await _firestore.collection('buildings').get();
-    final Map<String, Building> buildingsMap = {};
-    for (var doc in buildingsSnapshot.docs) {
-      buildingsMap[doc.id] = Building.fromMap(doc.data(), doc.id);
-    }
     
-    List<Map<String, dynamic>> collections = [];
-    
-    try {
-      // 2. Fetch all collected units across all buildings using a single collectionGroup query
-      final unitsSnapshot = await _firestore.collectionGroup('units')
-          .where('status', isEqualTo: 'collected')
-          .get();
+    // Fetch units for all buildings in parallel
+    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+      final building = Building.fromMap(buildingDoc.data(), buildingDoc.id);
+      final unitsSnapshot = await buildingDoc.reference.collection('units').get();
       
+      final List<Map<String, dynamic>> buildingCollections = [];
       for (final unitDoc in unitsSnapshot.docs) {
         final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
-        final buildingId = unitDoc.reference.parent.parent?.id ?? '';
-        final building = buildingsMap[buildingId];
-        
-        if (building != null) {
-          collections.add({
+        if (unit.status == 'collected') {
+          buildingCollections.add({
             'unit': unit,
             'building': building,
           });
         }
       }
-    } catch (e) {
-      // Fallback if collectionGroup index is not created
-      print('CollectionGroup query failed (index missing?), falling back to multi-query: $e');
-      final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
-        final building = buildingsMap[buildingDoc.id];
-        final unitsSnapshot = await buildingDoc.reference.collection('units').get();
-        
-        final List<Map<String, dynamic>> buildingCollections = [];
-        for (final unitDoc in unitsSnapshot.docs) {
-          final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
-          if (unit.status == 'collected' && building != null) {
-            buildingCollections.add({
-              'unit': unit,
-              'building': building,
-            });
-          }
-        }
-        return buildingCollections;
-      });
+      return buildingCollections;
+    });
 
-      final results = await Future.wait(unitFutures);
-      collections = results.expand((x) => x).toList();
-    }
+    final results = await Future.wait(unitFutures);
+    final collections = results.expand((x) => x).toList();
     
     // Sort descending by date
     collections.sort((a, b) {
@@ -326,60 +326,48 @@ class BuildingService {
     });
   }
 
-  // Admin function: Delete a building and all its units
-  Future<void> deleteBuilding(String buildingId) async {
-    final buildingRef = _firestore.collection('buildings').doc(buildingId);
-    final unitsSnapshot = await buildingRef.collection('units').get();
-
-    final batch = _firestore.batch();
-    
-    // Delete all units
-    for (final doc in unitsSnapshot.docs) {
-      batch.delete(doc.reference);
-    }
-    
-    // Delete the building
-    batch.delete(buildingRef);
-    
-    await batch.commit();
-  }
-
-  // Admin function: Reset a collected unit back to pending
-  Future<void> resetUnitCollection({
-    required String buildingId,
-    required String unitId,
-    required double previousAmount,
-  }) async {
-    final buildingRef = _firestore.collection('buildings').doc(buildingId);
-    final unitRef = buildingRef.collection('units').doc(unitId);
-
-    final batch = _firestore.batch();
-
-    // Decrement collected count and total amount from building
-    batch.update(buildingRef, {
-      'collectedCount': FieldValue.increment(-1),
-      'totalCollected': FieldValue.increment(-previousAmount),
-    });
-
-    // Reset unit status
-    batch.update(unitRef, {
-      'status': 'pending',
-      'amount': 0.0,
-      'collectedBy': FieldValue.delete(),
-      'collectedAt': FieldValue.delete(),
-      'photoBase64': FieldValue.delete(),
-    });
-
-    await batch.commit();
-  }
-
   // Rename a unit
   Future<void> renameUnit({
     required String buildingId,
     required String unitId,
     required String newName,
   }) async {
-    final unitRef = _firestore.collection('buildings').doc(buildingId).collection('units').doc(unitId);
-    await unitRef.update({'unitLabel': newName});
+    await _firestore
+        .collection('buildings')
+        .doc(buildingId)
+        .collection('units')
+        .doc(unitId)
+        .update({
+      'unitLabel': newName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Reset a unit collection
+  Future<void> resetUnitCollection({
+    required String buildingId,
+    required String unitId,
+    required double previousAmount,
+  }) async {
+    final batch = _firestore.batch();
+    final buildingRef = _firestore.collection('buildings').doc(buildingId);
+    final unitRef = buildingRef.collection('units').doc(unitId);
+
+    batch.update(buildingRef, {
+      'collectedCount': FieldValue.increment(-1),
+      'totalCollected': FieldValue.increment(-previousAmount),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.update(unitRef, {
+      'status': 'pending',
+      'amount': 0.0,
+      'collectedBy': null,
+      'collectedAt': null,
+      'photoBase64': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
   }
 }

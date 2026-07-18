@@ -1,10 +1,6 @@
-import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../providers/auth_provider.dart';
-import '../main.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -22,36 +18,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
   bool _isLogin = true;
   String? _errorMessage;
-
-  // ── Animation controllers ──────────────────────────────────────────────────
-  late AnimationController _blobCtrl;
-  late AnimationController _cardCtrl;
-  late Animation<double>   _cardSlide;
-  late Animation<double>   _cardFade;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Blobs — slow, looping float
-    _blobCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat(reverse: true);
-
-    // Card — one-shot slide-in from below
-    _cardCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _cardSlide = Tween<double>(begin: 32, end: 0).animate(
-      CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOutQuart),
-    );
-    _cardFade = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOut),
-    );
-    _cardCtrl.forward();
-  }
 
   @override
   void dispose() {
@@ -85,13 +51,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
       // Success is handled by the router listening to authStateChanges
     } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('\${_isLogin ? "Login" : "Sign up"} failed: \${_errorMessage ?? "Unknown error"}')),
         );
       }
     } finally {
-      if (mounted) setState(() { _isLoading = false; });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

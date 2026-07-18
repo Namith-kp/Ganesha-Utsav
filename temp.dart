@@ -1,1 +1,0 @@
-import 'package:latlong2/latlong.dart'; void main() { final dist = Distance(); print(dist.bearing(LatLng(0,0), LatLng(1,0))); print(dist.bearing(LatLng(0,0), LatLng(0,1))); print(dist.bearing(LatLng(0,0), LatLng(-1,0))); print(dist.bearing(LatLng(0,0), LatLng(0,-1))); }

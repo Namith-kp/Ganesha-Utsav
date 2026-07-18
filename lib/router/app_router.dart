@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../screens/login_screen.dart';
-import '../screens/setup_profile_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/ar_view_screen.dart';
 import '../screens/reports_screen.dart';
@@ -11,32 +10,21 @@ import '../screens/admin_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
-  final profileState = ref.watch(collectorProfileProvider);
 
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
+      // If the auth state is still loading, don't redirect yet
       if (authState.isLoading) return null;
 
       final isAuth = authState.value != null;
       final isLoggingIn = state.matchedLocation == '/login';
-      final isSettingUpProfile = state.matchedLocation == '/setup-profile';
 
       if (!isAuth) {
         return isLoggingIn ? null : '/login';
       }
-      
-      // If authState has a value, check profile State
-      if (profileState.isLoading) return null;
 
-      final hasProfile = profileState.value != null;
-
-      if (!hasProfile) {
-        return isSettingUpProfile ? null : '/setup-profile';
-      }
-
-      // User is authenticated and has a profile
-      if (isLoggingIn || isSettingUpProfile) {
+      if (isLoggingIn) {
         return '/';
       }
 
@@ -54,10 +42,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: '/setup-profile',
-        builder: (context, state) => const SetupProfileScreen(),
       ),
       GoRoute(
         path: '/ar',

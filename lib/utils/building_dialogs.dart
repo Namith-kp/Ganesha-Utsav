@@ -28,9 +28,9 @@ void _showAddUnitDialog(BuildContext context, WidgetRef ref, Building building) 
           onPressed: () async {
             if (controller.text.trim().isNotEmpty) {
               final buildingService = ref.read(buildingServiceProvider);
-              await buildingService.addUnit(
-                buildingId: building.id,
-                unitLabel: controller.text.trim(),
+              await buildingService.addUnitToBuilding(
+                building.id,
+                controller.text.trim(),
               );
               if (ctx.mounted) Navigator.pop(ctx);
             }
@@ -253,140 +253,162 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
   final isAdmin = ref.read(collectorProfileProvider).value?.role == 'admin';
   final isAlreadyCollected = unit.status == 'collected';
 
-  if (isAlreadyCollected && !isAdmin) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.headlineSmall),
-              IconButton(
-                icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                onPressed: () {
-                  final controller = TextEditingController(text: unit.unitLabel);
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Rename Unit'),
-                      content: TextField(
-                        controller: controller,
-                        decoration: const InputDecoration(labelText: 'Unit Name'),
-                        autofocus: true,
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
-                        ElevatedButton(
-                          onPressed: () async {
-                            if (controller.text.trim().isNotEmpty) {
-                              final buildingService = ref.read(buildingServiceProvider);
-                              await buildingService.renameUnit(
-                                buildingId: building.id,
-                                unitId: unit.id,
-                                newName: controller.text.trim(),
-                              );
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              if (context.mounted) Navigator.pop(context); // Close the sheet to refresh
-                            }
-                          },
-                          child: const Text('SAVE'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (unit.photoBase64 != null) ...[
-            GestureDetector(
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => Dialog(
-                    backgroundColor: Colors.transparent,
-                    child: Stack(
-                      alignment: Alignment.topRight,
-                      children: [
-                        InteractiveViewer(
-                          child: Image.memory(
-                            base64Decode(unit.photoBase64!),
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                          onPressed: () => Navigator.of(ctx).pop(),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  base64Decode(unit.photoBase64!),
-                  height: 150,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          const Icon(Icons.check_circle, color: Colors.green, size: 64),
-          const SizedBox(height: 16),
-          Text('Amount Collected: ₹${unit.amount}'),
-          const SizedBox(height: 24),
-          const SizedBox(height: 24),
-          if (!isAdmin)
-            const Text('Only admins can edit collected units.', style: TextStyle(color: Colors.grey))
-          else
-            ElevatedButton.icon(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              label: const Text('RESET COLLECTION', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Reset Collection?'),
-                    content: const Text('This will reset the amount to 0 and mark the unit as pending.'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('RESET'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm == true) {
-                  final buildingService = ref.read(buildingServiceProvider);
-                  await buildingService.resetUnitCollection(
-                    buildingId: building.id,
-                    unitId: unit.id,
-                    previousAmount: unit.amount,
-                  );
-                  if (context.mounted) Navigator.pop(context);
-                }
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
   final amountController = TextEditingController(text: isAlreadyCollected ? unit.amount.toString() : '');
   bool isSubmitting = false;
   String? photoBase64 = unit.photoBase64;
+  bool isEditing = false;
 
   return StatefulBuilder(
     builder: (ctx, setState) {
+      if (isAlreadyCollected && !isEditing) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.headlineSmall),
+                  if (isAdmin)
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                      onPressed: () {
+                        final controller = TextEditingController(text: unit.unitLabel);
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Rename Unit'),
+                            content: TextField(
+                              controller: controller,
+                              decoration: const InputDecoration(labelText: 'Unit Name'),
+                              autofocus: true,
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  if (controller.text.trim().isNotEmpty) {
+                                    final buildingService = ref.read(buildingServiceProvider);
+                                    await buildingService.renameUnit(
+                                      buildingId: building.id,
+                                      unitId: unit.id,
+                                      newName: controller.text.trim(),
+                                    );
+                                    if (ctx.mounted) Navigator.pop(ctx);
+                                    if (context.mounted) Navigator.pop(context);
+                                  }
+                                },
+                                child: const Text('SAVE'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (unit.photoBase64 != null) ...[
+                GestureDetector(
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => Dialog(
+                        backgroundColor: Colors.transparent,
+                        child: Stack(
+                          alignment: Alignment.topRight,
+                          children: [
+                            InteractiveViewer(
+                              child: Image.memory(
+                                base64Decode(unit.photoBase64!),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                              onPressed: () => Navigator.of(ctx).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      base64Decode(unit.photoBase64!),
+                      height: 150,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              const Icon(Icons.check_circle, color: Colors.green, size: 64),
+              const SizedBox(height: 16),
+              Text('Amount Collected: ₹${unit.amount}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              if (unit.collectedBy != null && unit.collectedBy!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Collected By: ${unit.collectedBy}', style: const TextStyle(fontSize: 14)),
+              ],
+              if (unit.collectedAt != null) ...[
+                const SizedBox(height: 4),
+                Text('Date: ${unit.collectedAt!.toLocal().toString().split(' ')[0]}', style: const TextStyle(fontSize: 14)),
+                const SizedBox(height: 4),
+                Text('Time: ${unit.collectedAt!.toLocal().toString().split(' ')[1].split('.')[0]}', style: const TextStyle(fontSize: 14)),
+              ],
+              const SizedBox(height: 24),
+              if (!isAdmin)
+                const Text('Only admins can edit collected units.', style: TextStyle(color: Colors.grey))
+              else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.edit, color: Colors.white),
+                      label: const Text('EDIT', style: TextStyle(color: Colors.white)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                      onPressed: () => setState(() => isEditing = true),
+                    ),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      label: const Text('RESET', style: TextStyle(color: Colors.white)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Reset Collection?'),
+                            content: const Text('This will reset the amount to 0 and mark the unit as pending.'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('RESET'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          final buildingService = ref.read(buildingServiceProvider);
+                          await buildingService.resetUnitCollection(
+                            buildingId: building.id,
+                            unitId: unit.id,
+                            previousAmount: unit.amount,
+                          );
+                          if (context.mounted) Navigator.pop(context);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        );
+      }
+      
       return Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -630,7 +652,7 @@ void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLn
                         lat: point.latitude,
                         lng: point.longitude,
                         name: nameController.text.trim(),
-                        totalUnits: units,
+                        unitLabels: List.generate(units, (i) => 'Unit '),
                         createdBy: authUser.uid,
                       );
                     } else {

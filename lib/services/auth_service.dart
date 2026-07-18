@@ -1,12 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import '../models/collector.dart';
 
 class AuthService {
   final auth.FirebaseAuth _firebaseAuth = auth.FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   // Listen to auth state changes
   Stream<auth.User?> get authStateChanges => _firebaseAuth.authStateChanges();
@@ -31,39 +29,39 @@ class AuthService {
     });
   }
 
-  // Sign in with Google
-  Future<auth.UserCredential?> signInWithGoogle() async {
+  // Sign up with email, password, and name
+  Future<auth.UserCredential?> signUp(String email, String password, String name) async {
     try {
-      // Trigger the authentication flow
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        return null; // The user canceled the sign-in
-      }
-
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-
-      // Create a new credential
-      final auth.OAuthCredential credential = auth.GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
       );
-
-      // Once signed in, return the UserCredential
-      return await _firebaseAuth.signInWithCredential(credential);
+      
+      if (credential.user != null) {
+        await _firestore.collection('collectors').doc(credential.user!.uid).set({
+          'name': name,
+          'email': email,
+          'role': 'collector', // default role
+        });
+      }
+      return credential;
     } catch (e) {
-      print("Google Sign-In error: $e");
+      print("Sign up error: $e");
       rethrow;
     }
   }
 
-  // Complete profile for new users
-  Future<void> completeProfile(String uid, String name, String email) async {
-    await _firestore.collection('collectors').doc(uid).set({
-      'name': name,
-      'email': email,
-      'role': 'collector', // default role
-    });
+  // Sign in with email and password
+  Future<auth.UserCredential?> signIn(String email, String password) async {
+    try {
+      return await _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } catch (e) {
+      print("Login error: $e");
+      rethrow;
+    }
   }
 
   // Update a user's role (Admin only)
@@ -75,7 +73,6 @@ class AuthService {
 
   // Sign out
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
     await _firebaseAuth.signOut();
   }
 }
