@@ -47,6 +47,7 @@
       serverTimestamp,
       writeBatch,
       Timestamp,
+      deleteField,
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     // ─── Firebase Config ───────────────────────────────────────────────────────
@@ -330,6 +331,8 @@
       const halfHRad = (hFov / 2) * Math.PI / 180;
       const halfVRad = (vFov / 2) * Math.PI / 180;
 
+      // 1. Gather visible buildings and their distance/bearing
+      const visibleBuildings = [];
       Object.values(buildingsData).forEach(b => {
         if (!b.lat || !b.lng) return;
 
@@ -339,10 +342,8 @@
 
         const dist = haversineDistance(userLat, userLng, b.lat, b.lng);
 
-        // If 'Nearby Only' is checked, limit to 60m (about one street block).
-        // This stops distant houses from rendering on foreground walls, but doesn't make nearby houses abruptly disappear when you walk.
-        const maxDist = filterStreetOnly ? 60 : 500;
-        if (dist > maxDist) return;
+        // Limit to 16m to match the mobile app
+        if (dist > 16) return;
 
         const bearing = getBearingDeg(userLat, userLng, b.lat, b.lng);
         let diff = bearing - heading;
@@ -351,6 +352,30 @@
 
         // Add a slight buffer to FOV so badges don't abruptly disappear the millisecond they touch the edge of the screen
         if (Math.abs(diff) > (hFov / 2) + 5) return;
+        
+        visibleBuildings.push({ building: b, dist, bearing, diff });
+      });
+
+      // 2. Sort from closest to furthest
+      visibleBuildings.sort((a, b) => a.dist - b.dist);
+
+      // 3. Filter occluded (further away but within 15 deg viewing angle of closer)
+      const finalVisible = [];
+      for (const current of visibleBuildings) {
+        let occluded = false;
+        for (const closer of finalVisible) {
+          let angleDiff = Math.abs(current.bearing - closer.bearing);
+          if (angleDiff > 180) angleDiff = 360 - angleDiff;
+          if (angleDiff <= 40) {
+            occluded = true;
+            break;
+          }
+        }
+        if (!occluded) finalVisible.push(current);
+      }
+
+      // 4. Render
+      finalVisible.forEach(({ building: b, dist, diff }) => {
 
         // Perspective-correct (tan-based) horizontal position — a linear
         // diff/FOV mapping drifts increasingly off-target away from screen
@@ -362,7 +387,7 @@
         // the same way keeps the tag anchored to the building when the user
         // looks up/down instead of staying frozen at a fixed screen height.
         const normY = Math.tan(-pitch * Math.PI / 180) / Math.tan(halfVRad);
-        const y = (H / 2) + normY * (H / 2) - 40; // float slightly above the horizon
+        const y = (H / 2) + normY * (H / 2) - 80; // floated higher on the building wall
 
         const color = b.collectedCount === 0 ? '#ef4444' :
                       (b.collectedCount >= b.totalUnits ? '#22c55e' : '#f59e0b');
@@ -384,14 +409,10 @@
           opacity: ${opacity};
         `;
         badge.innerHTML = `
-          <div class="sv-badge-amount" style="color:${color}; border-color:${color}; box-shadow: 0 4px 16px ${color}33">
-            ₹${(b.totalCollected||0).toLocaleString('en-IN',{maximumFractionDigits:0})}
-          </div>
-          <div class="sv-badge-card">
-            <div class="sv-badge-name">${b.name}</div>
-            <div class="sv-badge-row">
-              <span class="sv-badge-status" style="color:${color}">${statusTxt}</span>
-              <span class="sv-badge-dist">${Math.round(dist)}m</span>
+          <div class="sv-badge-card" style="min-width: 100px; max-width: 280px; width: max-content; padding: 12px 16px;">
+            <div class="sv-badge-name" style="font-size: 18px; font-weight: bold; text-align: center; word-wrap: break-word; white-space: normal;">${b.name}</div>
+            <div class="sv-badge-row" style="justify-content: center; margin-top: 4px;">
+              <span class="sv-badge-dist" style="font-size: 22px; font-weight: bold; color: white;">₹${(b.totalCollected||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
             </div>
           </div>
         `;
@@ -537,7 +558,8 @@
 
         // Apply Status Filter
         if (filterStatus === 'pending' && b.collectedCount > 0) return;
-        if (filterStatus === 'done' && b.collectedCount === 0) return;
+        if (filterStatus === 'partial' && (b.collectedCount === 0 || b.collectedCount >= b.totalUnits)) return;
+        if (filterStatus === 'done' && b.collectedCount < (b.totalUnits || 1)) return;
 
         // Apply Distance Filter (This Street Only ~100m)
         if (filterStreetOnly && nearbyUserPos) {
@@ -687,7 +709,10 @@
     function renderUnitList(container, building, units) {
       const isAdmin = currentCollector?.role === "admin";
       container.innerHTML = `
-        <p class="sheet-sub">${building.totalUnits} units · ₹${(building.totalCollected || 0).toLocaleString("en-IN")} collected</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <p class="sheet-sub" style="margin:0">${building.totalUnits} units · ₹${(building.totalCollected || 0).toLocaleString("en-IN")} collected</p>
+          <button class="primary-btn" style="padding:4px 10px; font-size:12px; width:auto; background:var(--blue);" onclick="addNewUnitWeb('${building.id}')">+ Add Unit</button>
+        </div>
         <div class="unit-list">
           ${units.map((u) => `
             <div class="unit-row ${u.status === 'collected' ? 'collected' : ''}" onclick="openUnitForm('${building.id}','${u.id}')">
@@ -722,6 +747,9 @@
       if (isCollected && !isAdmin) {
         container.innerHTML = `
           <div class="collected-view">
+            <div style="display:flex; justify-content:flex-end; width:100%; margin-bottom: -20px;">
+              <button class="primary-btn" style="padding:4px 10px; font-size:12px; width:auto; background:var(--blue); z-index:10;" onclick="addNewUnitWeb('${building.id}')">+ Add Unit</button>
+            </div>
             <div class="big-check">✓</div>
             <p class="collected-label">${unit.unitLabel}</p>
             <p class="collected-amount">₹${(unit.amount || 0).toLocaleString("en-IN")}</p>
@@ -732,7 +760,10 @@
 
       container.innerHTML = `
         <div class="unit-form">
-          <p class="unit-form-title">${unit?.unitLabel || "Unit"}</p>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <p class="unit-form-title" style="margin:0">${unit?.unitLabel || "Unit"}</p>
+            <button class="primary-btn" style="padding:4px 10px; font-size:12px; width:auto; background:var(--blue);" onclick="addNewUnitWeb('${building.id}')">+ Add Unit</button>
+          </div>
           ${isCollected ? `<div class="admin-edit-banner">⚙ Admin Edit Mode</div>` : ""}
           <label class="form-label">Amount (₹)</label>
           <input id="unit-amount-input" type="number" class="form-input" placeholder="Enter amount" value="${isCollected ? unit.amount : ""}" />
@@ -747,10 +778,43 @@
         </div>`;
     }
 
+    window.addNewUnitWeb = async function(buildingId) {
+      const label = prompt("Enter new unit name (e.g., Unit 3, Shop 2):");
+      if (!label || !label.trim()) return;
+      
+      const building = buildingsData[buildingId];
+      if (!building) return;
+
+      try {
+        const batch = writeBatch(db);
+        const buildingRef = doc(db, "buildings", buildingId);
+        const unitRef = doc(collection(db, `buildings/${buildingId}/units`));
+        
+        batch.set(unitRef, {
+          unitLabel: label.trim(),
+          status: "pending",
+          amount: 0,
+          collectedBy: null,
+          collectedAt: null,
+          photoUrl: null
+        });
+        
+        batch.update(buildingRef, {
+          totalUnits: (building.totalUnits || 0) + 1,
+          type: label.trim().toLowerCase() !== 'main' ? 'apartment' : building.type
+        });
+        
+        await batch.commit();
+        openBuildingSheet(buildingId); // Refresh sheet with new unit
+      } catch(e) {
+        alert("Error adding unit: " + e.message);
+      }
+    };
+
     window.submitUnitCollection = async function (buildingId, unitId, isAlreadyCollected, isAdmin) {
       const amountInput = document.getElementById("unit-amount-input");
       const amount = parseFloat(amountInput.value);
-      if (!amount || amount <= 0) { alert("Please enter a valid amount."); return; }
+      if (isNaN(amount) || amount < 0) { alert("Please enter a valid amount."); return; }
       if (!currentUser) return;
 
       const btn = document.querySelector(".unit-form .primary-btn");
@@ -760,6 +824,32 @@
       try {
         const unitRef = doc(db, `buildings/${buildingId}/units/${unitId}`);
         const buildingRef = doc(db, `buildings/${buildingId}`);
+
+        if (amount === 0) {
+          if (isAlreadyCollected) {
+            const oldDoc = await getDoc(unitRef);
+            const oldAmount = oldDoc.data()?.amount || 0;
+            
+            const batch = writeBatch(db);
+            batch.update(unitRef, {
+              status: "pending",
+              amount: 0,
+              collectedBy: deleteField(),
+              collectedAt: deleteField()
+            });
+            
+            const bld = buildingsData[buildingId];
+            const newCount = Math.max(0, (bld?.collectedCount || 0) - 1);
+            const newTotal = Math.max(0, (bld?.totalCollected || 0) - oldAmount);
+            batch.update(buildingRef, { collectedCount: newCount, totalCollected: newTotal });
+            
+            await batch.commit();
+          }
+          closeSheet();
+          toast("✓ Collection reset!");
+          return;
+        }
+
 
         if (isAlreadyCollected && isAdmin) {
           // Admin correction — batched write with corrections log
@@ -1100,6 +1190,9 @@
       <button id="nav-admin" class="nav-btn" onclick="navigateTo('admin')" style="display:none">
         <span class="nav-icon">⚙</span><span class="nav-label">Admin</span>
       </button>
+      <button class="nav-btn" onclick="window.open('street-view.html','_blank')" title="Open 360° panorama explorer">
+        <span class="nav-icon">🌐</span><span class="nav-label">360° Explorer</span>
+      </button>
     </nav>
     <div class="topbar-user">
       <div class="user-avatar-sm">👤</div>
@@ -1118,6 +1211,7 @@
       <select id="filter-status" class="filter-select" onchange="window.updateFilters()">
         <option value="all">All</option>
         <option value="pending">Pending</option>
+        <option value="partial">Partial</option>
         <option value="done">Done</option>
       </select>
     </div>

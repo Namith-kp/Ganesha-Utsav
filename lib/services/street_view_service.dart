@@ -15,65 +15,21 @@ class PbTuple {
   PbTuple(this.childCount, this.serialized);
 }
 
-class StreetViewLink {
-  final String panoid;
-  final double lat;
-  final double lon;
-  final double yaw;
-
-  StreetViewLink({
-    required this.panoid,
-    required this.lat,
-    required this.lon,
-    required this.yaw,
-  });
-}
-
 class StreetViewPanorama {
   final String id;
   final double lat;
   final double lon;
   final double heading;
-  final List<StreetViewLink> links;
 
   StreetViewPanorama({
     required this.id,
     required this.lat,
     required this.lon,
     required this.heading,
-    required this.links,
   });
 }
 
 class StreetViewService {
-  final Map<String, Uint8List> _imageCache = {};
-  final Map<String, StreetViewPanorama> _panoCache = {};
-  static const int _maxCacheSize = 15;
-
-  void _addToCache(String panoid, Uint8List data) {
-    _imageCache[panoid] = data;
-    if (_imageCache.length > _maxCacheSize) {
-      _imageCache.remove(_imageCache.keys.first);
-    }
-  }
-
-  void clearCache() {
-    _imageCache.clear();
-    _panoCache.clear();
-  }
-
-  Future<void> prefetchPanoramas(List<String> panoids, {int zoom = 2}) async {
-    for (var panoid in panoids) {
-      if (!_imageCache.containsKey(panoid)) {
-        // Run in background without awaiting the whole loop
-        downloadPanoramaImage(panoid, zoom: zoom).then((data) {
-          // data is already cached inside downloadPanoramaImage
-        }).catchError((e) {
-          debugPrint('Prefetch failed for $panoid: $e');
-        });
-      }
-    }
-  }
   String toProtobufUrl(Map<int, dynamic> fields) {
     return _toProtobufUrl(fields).serialized;
   }
@@ -159,29 +115,9 @@ class StreetViewService {
     return "https://maps.googleapis.com/maps/api/js/GeoPhotoService.SingleImageSearch?pb=$pbString&callback=_xdc_._v2mub5";
   }
 
-  Future<StreetViewPanorama?> findPanoramaByLink(StreetViewLink link) async {
-    if (_panoCache.containsKey(link.panoid)) {
-      return _panoCache[link.panoid];
-    }
+  Future<StreetViewPanorama?> findPanorama(double lat, double lon) async {
     try {
-      final pano = await findPanorama(link.lat, link.lon, radius: 50.0);
-      if (pano != null) {
-        _panoCache[pano.id] = pano;
-        // Just in case the returned id is slightly different from link.panoid, cache it under both
-        if (pano.id != link.panoid) {
-          _panoCache[link.panoid] = pano;
-        }
-      }
-      return pano;
-    } catch (e) {
-      debugPrint('Error finding panorama by link: $e');
-      rethrow;
-    }
-  }
-
-  Future<StreetViewPanorama?> findPanorama(double lat, double lon, {double radius = 1000.0}) async {
-    try {
-      final url = buildFindPanoramaRequestUrl(lat, lon, radius);
+      final url = buildFindPanoramaRequestUrl(lat, lon, 1000.0);
       final response = await http.get(Uri.parse(url));
       if (response.statusCode != 200) {
         throw Exception("API returned status code ${response.statusCode}");
@@ -207,135 +143,118 @@ class StreetViewService {
         throw Exception("Missing message data in response: $data");
       }
       
-      final pano = _parsePanoramaMsg(msg);
-      _panoCache[pano.id] = pano;
-      return pano;
+      final panoid = msg[1][1] as String;
+      
+      final latResponse = (msg[5][0][1][0][2] as num).toDouble();
+      final lonResponse = (msg[5][0][1][0][3] as num).toDouble();
+      final heading = (msg[5][0][1][2][0] as num).toDouble(); // degrees
+      
+      return StreetViewPanorama(
+        id: panoid,
+        lat: latResponse,
+        lon: lonResponse,
+        heading: heading,
+      );
     } catch (e) {
       debugPrint('Error finding panorama: $e');
       rethrow;
     }
   }
 
-  StreetViewPanorama _parsePanoramaMsg(List<dynamic> msg) {
-    final panoid = msg[1][1] as String;
-    
-    final latResponse = (msg[5][0][1][0][2] as num).toDouble();
-    final lonResponse = (msg[5][0][1][0][3] as num).toDouble();
-    final heading = (msg[5][0][1][2][0] as num).toDouble(); // degrees
-    
-    List<StreetViewLink> links = [];
-    try {
-      final linksList = msg[5][0][3][0] as List?;
-      if (linksList != null) {
-        // Collect all links with their distances
-        List<Map<String, dynamic>> allLinks = [];
-        for (var l in linksList) {
-          final pId = l[0][1] as String;
-          final lLat = (l[2][0][2] as num).toDouble();
-          final lLon = (l[2][0][3] as num).toDouble();
-          final lYaw = (l[2][2][0] as num).toDouble();
-          
-          final distance = _calculateDistance(latResponse, lonResponse, lLat, lLon);
-          if (distance > 1.0) { // Skip self or virtually identical locations
-            allLinks.add({
-              'panoid': pId,
-              'lat': lLat,
-              'lon': lLon,
-              'yaw': lYaw,
-              'distance': distance,
-            });
-          }
-        }
-        
-        // Sort by distance ascending so we evaluate closest first
-        allLinks.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-        
-        for (var l in allLinks) {
-          final lYaw = l['yaw'] as double;
-          
-          // Skip panoramas that are in a very similar direction to ones we already picked
-          bool tooCloseInAngle = false;
-          for (var existing in links) {
-            double diff = (existing.yaw - lYaw).abs();
-            diff = diff > 180 ? 360 - diff : diff;
-            if (diff < 45.0) {
-              tooCloseInAngle = true;
-              break;
-            }
-          }
-          
-          if (!tooCloseInAngle) {
-            links.add(StreetViewLink(
-              panoid: l['panoid'] as String,
-              lat: l['lat'] as double,
-              lon: l['lon'] as double,
-              yaw: lYaw,
-            ));
-          }
+  /// Decodes a single tile and normalises it to plain 8-bit RGB.
+  ///
+  /// Google may serve tiles as WebP (which the `image` package decodes with
+  /// R and B swapped) or as an Adobe-marked JPEG (which decodes inverted).
+  /// Either one makes the stitched panorama look like a photographic negative,
+  /// so we pick the decoder explicitly off the content-type instead of letting
+  /// [img.decodeImage] sniff it, then force the result to uint8/3-channel.
+  img.Image? _decodeTile(Uint8List bytes, String? contentType) {
+    img.Image? tile;
+
+    final type = (contentType ?? '').toLowerCase();
+    if (type.contains('webp')) {
+      tile = img.decodeWebP(bytes);
+      if (tile != null) {
+        // Undo the BGR channel order the WebP decoder hands back.
+        for (final p in tile) {
+          final r = p.r;
+          p.r = p.b;
+          p.b = r;
         }
       }
-    } catch (e) {
-      debugPrint('Could not parse some links: $e');
+    } else if (type.contains('png')) {
+      tile = img.decodePng(bytes);
+    } else {
+      tile = img.decodeJpg(bytes);
     }
-    
-    return StreetViewPanorama(
-      id: panoid,
-      lat: latResponse,
-      lon: lonResponse,
-      heading: heading,
-      links: links,
+
+    // Fall back to sniffing if the content-type lied.
+    tile ??= img.decodeImage(bytes);
+    if (tile == null) return null;
+
+    // Flattens palettes, 16-bit samples and CMYK into straight RGB.
+    return tile.convert(
+      format: img.Format.uint8,
+      numChannels: 3,
+      noAnimation: true,
     );
   }
 
   Future<Uint8List?> downloadPanoramaImage(String panoid, {int zoom = 2}) async {
-    if (_imageCache.containsKey(panoid)) {
-      return _imageCache[panoid];
-    }
-    
     try {
       int tileWidth = 512;
       int tileHeight = 512;
       int cols = pow(2, zoom).toInt();
       int rows = pow(2, zoom - 1).toInt();
-      
-      final baseImage = img.Image(width: cols * tileWidth, height: rows * tileHeight);
-      
+
+      // Match the tiles: 3-channel uint8, no alpha. A 4-channel canvas here
+      // would alpha-blend every tile against transparent black.
+      final baseImage = img.Image(
+        width: cols * tileWidth,
+        height: rows * tileHeight,
+        format: img.Format.uint8,
+        numChannels: 3,
+      );
+
       final client = http.Client();
       final futures = <Future>[];
-      
+
       for (int y = 0; y < rows; y++) {
         for (int x = 0; x < cols; x++) {
           futures.add(() async {
-            final url = "https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=$panoid&x=$x&y=$y&zoom=$zoom";
-            final response = await client.get(Uri.parse(url));
+            final url =
+                "https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=$panoid&x=$x&y=$y&zoom=$zoom";
+            final response = await client.get(
+              Uri.parse(url),
+              // Ask for baseline JPEG only, so we never get a WebP tile.
+              headers: const {'Accept': 'image/jpeg'},
+            );
             if (response.statusCode == 200) {
-              final tileImg = img.decodeImage(response.bodyBytes);
+              final tileImg = _decodeTile(
+                response.bodyBytes,
+                response.headers['content-type'],
+              );
               if (tileImg != null) {
-                img.compositeImage(baseImage, tileImg, dstX: x * tileWidth, dstY: y * tileHeight);
+                img.compositeImage(
+                  baseImage,
+                  tileImg,
+                  dstX: x * tileWidth,
+                  dstY: y * tileHeight,
+                  blend: img.BlendMode.direct,
+                );
               }
             }
           }());
         }
       }
-      
+
       await Future.wait(futures);
       client.close();
-      
-      final result = Uint8List.fromList(img.encodeJpg(baseImage, quality: 85));
-      _addToCache(panoid, result);
-      return result;
+
+      return Uint8List.fromList(img.encodeJpg(baseImage, quality: 85));
     } catch (e) {
       debugPrint('Error downloading panorama: $e');
       return null;
     }
-  }
-
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    var p = 0.017453292519943295;
-    var c = cos;
-    var a = 0.5 - c((lat2 - lat1) * p)/2 + 
-          c(lat1 * p) * c(lat2 * p) * 
-          (1 - c((lon2 - lon1) * p))/2;
-    return 12742 * asin(sqrt(a)) * 1000;
   }
 }

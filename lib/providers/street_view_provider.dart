@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -67,6 +68,9 @@ final prefetchControllerProvider = Provider<void>((ref) {
 
   final currentNode = ref.read(nodeByIdProvider(currentId));
   if (currentNode == null) return;
+
+  // CacheManager uses sqflite/path_provider and does not support web out of the box
+  if (kIsWeb) return;
 
   // Prefetch the current node just in case
   DefaultCacheManager().downloadFile('$baseUrl/$currentId.webp');

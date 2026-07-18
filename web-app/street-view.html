@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Street View Explorer — Ganesha Festival</title>
+  <meta name="description" content="Interactive 360° street view explorer for the Ganesha festival area. Navigate panoramas on a live map." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Pannellum 360° Viewer -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+
+  <style>
+    /* ── Design Tokens ──────────────────────────────────────────────────────── */
+    :root {
+      --bg-base:      #0a0d14;
+      --bg-card:      #12162b;
+      --bg-glass:     rgba(18,22,43,0.88);
+      --border:       rgba(255,255,255,0.08);
+      --border-light: rgba(255,255,255,0.14);
+      --text-primary: #f0f2ff;
+      --text-secondary:#9aa0c0;
+      --text-muted:   #5a618a;
+      --gold:         #f5a623;
+      --saffron:      #ff6a00;
+      --blue:         #6366f1;
+      --green:        #22c55e;
+      --font:         'Inter', system-ui, sans-serif;
+      --font-head:    'Outfit', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; font-family: var(--font); background: var(--bg-base); color: var(--text-primary); }
+
+    /* ── Top Bar ──────────────────────────────────────────────────────────── */
+    #topbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      height: 56px;
+      background: rgba(10,13,20,0.96);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 20px; gap: 14px;
+    }
+    #back-btn {
+      display: none; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border-light);
+      color: var(--text-secondary); font-size: 13px; font-family: var(--font);
+      padding: 6px 12px; border-radius: 8px; cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    #back-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+    #back-btn svg { width: 16px; height: 16px; }
+    .topbar-logo { font-size: 22px; }
+    .topbar-title {
+      font-family: var(--font-head); font-weight: 700; font-size: 17px;
+      background: linear-gradient(135deg, var(--gold), var(--saffron));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    #node-info {
+      margin-left: auto; display: none; align-items: center; gap: 10px;
+    }
+    #node-address {
+      font-size: 13px; color: var(--text-secondary);
+      max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #node-date {
+      font-size: 11px; color: var(--text-muted);
+      background: var(--bg-card); border: 1px solid var(--border);
+      padding: 3px 8px; border-radius: 6px;
+    }
+
+    /* ── Map ─────────────────────────────────────────────────────────────── */
+    #map-view {
+      position: fixed; inset: 56px 0 0 0;
+      transition: opacity 0.4s;
+    }
+    #map { width: 100%; height: 100%; }
+
+    /* ── Loading overlay ─────────────────────────────────────────────────── */
+    #loading-overlay {
+      position: fixed; inset: 0; z-index: 900;
+      background: var(--bg-base);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    }
+    .loader-ring {
+      width: 52px; height: 52px; border-radius: 50%;
+      border: 4px solid var(--border);
+      border-top-color: var(--gold);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-title { font-family: var(--font-head); font-size: 20px; font-weight: 700; color: var(--text-primary); }
+    .loading-sub { font-size: 13px; color: var(--text-secondary); }
+
+    /* ── Viewer ──────────────────────────────────────────────────────────── */
+    #viewer-view {
+      position: fixed; inset: 56px 0 0 0;
+      display: none;
+    }
+    #panorama { width: 100%; height: 100%; }
+
+    /* ── Mini-map ──────────────────────────────────────────────────────── */
+    #minimap-wrap {
+      position: fixed; bottom: 24px; right: 20px; z-index: 800;
+      display: none;
+      border-radius: 14px; overflow: hidden;
+      border: 2px solid var(--border-light);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      width: 200px; height: 160px;
+      background: var(--bg-card);
+    }
+    #minimap { width: 100%; height: 100%; }
+
+    /* ── Map dot styles ──────────────────────────────────────────────────────── */
+    .pano-dot {
+      width: 6px; height: 6px;
+      background: #1a73e8;
+      border: 1.5px solid #ffffff;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.12s, background 0.12s;
+    }
+    .pano-dot:hover {
+      transform: scale(2.5);
+      background: #ffffff;
+    }
+    .pano-dot.active {
+      width: 12px; height: 12px;
+      background: var(--gold);
+      border: 2px solid #fff;
+      transform: translate(-3px, -3px);
+      z-index: 1000;
+    }
+
+    /* ── Pannellum overrides ─────────────────────────────────────────────── */
+    .pnlm-container { background: #0a0d14 !important; }
+    .pnlm-load-button { background: var(--bg-card) !important; border: 1px solid var(--border-light) !important; border-radius: 10px !important; }
+    .pnlm-load-button p { color: var(--gold) !important; font-family: var(--font) !important; }
+
+    /* ── Count badge ──────────────────────────────────────────────────────── */
+    #count-badge {
+      position: fixed; top: 68px; left: 16px; z-index: 700;
+      background: var(--bg-glass);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-light);
+      border-radius: 10px; padding: 8px 14px;
+      font-size: 12px; color: var(--text-secondary);
+    }
+    #count-badge b { color: var(--gold); }
+
+    /* ── Error toast ──────────────────────────────────────────────────────── */
+    #error-toast {
+      display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #2a0d0d; border: 1px solid #ef4444;
+      color: #ff8a8a; padding: 12px 20px; border-radius: 10px;
+      font-size: 13px; z-index: 9999;
+    }
+
+    /* ── Leaflet overrides ────────────────────────────────────────────────────── */
+    .osm-tiles { filter: brightness(0.85) saturate(0.6); } /* Only dim standard map */
+    .leaflet-container { background: var(--bg-base); }
+    .leaflet-control-attribution { display: none; }
+    .leaflet-control-zoom a {
+      background: var(--bg-card) !important;
+      color: var(--text-secondary) !important;
+      border-color: var(--border-light) !important;
+    }
+    .leaflet-control-layers { 
+      background: var(--bg-card) !important; 
+      border: 1px solid var(--border-light) !important; 
+      border-radius: 8px !important; 
+      color: var(--text-primary) !important;
+    }
+    .leaflet-control-layers label { font-family: var(--font); font-size: 13px; cursor: pointer; }
+    /* Street view path line */
+    .sv-path-line { stroke: #4285f4; stroke-width: 4; stroke-opacity: 0.85; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <button id="back-btn" onclick="closeViewer()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15,18 9,12 15,6"/>
+      </svg>
+      Back to Map
+    </button>
+    <span class="topbar-logo">🙏</span>
+    <span class="topbar-title">Street View Explorer</span>
+    <div id="node-info">
+      <span id="node-address"></span>
+      <span id="node-date"></span>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading-overlay">
+    <div class="loader-ring"></div>
+    <div class="loading-title">Loading Panoramas</div>
+    <div class="loading-sub" id="loading-sub">Fetching metadata...</div>
+  </div>
+
+  <!-- Map -->
+  <div id="map-view">
+    <div id="map"></div>
+  </div>
+
+  <!-- Count badge -->
+  <div id="count-badge" style="display:none">
+    <b id="node-count">0</b> panorama locations — click any dot to explore
+  </div>
+
+  <!-- 360° Viewer -->
+  <div id="viewer-view">
+    <div id="panorama"></div>
+  </div>
+
+  <!-- Mini-map -->
+  <div id="minimap-wrap">
+    <div id="minimap"></div>
+  </div>
+
+  <!-- Error toast -->
+  <div id="error-toast" id="error-toast"></div>
+
+  <script>
+    // ── Config ──────────────────────────────────────────────────────────────
+    const BASE_URL = 'https://pub-2e6c9cb2a1eb4eb98c8bae3105ebf165.r2.dev';
+    const META_URLS = [
+      './mapped_metadata.json',      // local copy (no CORS) ← try first
+      './metadata.json',             // local copy fallback
+      `${BASE_URL}/mapped_metadata.json`,  // R2 CDN
+      `${BASE_URL}/metadata.json`,         // R2 CDN fallback
+    ];
+
+    // ── State ───────────────────────────────────────────────────────────────
+    let nodes = [];          // All StreetViewNode objects
+    let nodeMap = {};        // id → node
+    let markerMap = {};      // id → Leaflet marker
+    let mainMap = null;
+    let miniMapInst = null;
+    let miniMarker = null;
+    let viewer = null;
+    let currentNodeId = null;
+
+    // ── Boot ────────────────────────────────────────────────────────────────
+    (async function boot() {
+      try {
+        nodes = await fetchMetadata();
+        nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+        hideLoading();
+        initMap();
+      } catch (err) {
+        showError('Failed to load metadata: ' + err.message);
+        document.getElementById('loading-sub').textContent = 'Error: ' + err.message;
+      }
+    })();
+
+    async function fetchMetadata() {
+      for (const url of META_URLS) {
+        try {
+          const r = await fetch(url);
+          if (r.ok) return await r.json();
+        } catch (_) {}
+      }
+      throw new Error('Could not reach R2 metadata');
+    }
+
+    // ── Map ─────────────────────────────────────────────────────────────────
+    function initMap() {
+      if (nodes.length === 0) {
+        showError('No panorama nodes found in metadata.');
+        return;
+      }
+
+      const center = [nodes[0].lat, nodes[0].lon];
+
+      mainMap = L.map('map', {
+        center,
+        zoom: 18,
+        zoomControl: true,
+      });
+
+      const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 21,
+        className: 'osm-tiles'
+      });
+
+      const satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 21,
+        maxNativeZoom: 19,
+        attribution: 'Tiles &copy; Esri'
+      });
+
+      // Default to OSM
+      osmLayer.addTo(mainMap);
+
+      // Add layer toggle control
+      L.control.layers({
+        "Map View": osmLayer,
+        "Satellite View": satLayer
+      }, null, { position: 'topright' }).addTo(mainMap);
+
+      // ── Draw clickable path polylines (no dots)
+      const drawnEdges = new Set();
+      nodes.forEach(node => {
+        (node.neighbors || []).forEach(neighborId => {
+          const edgeKey = [node.id, neighborId].sort().join('|');
+          if (drawnEdges.has(edgeKey)) return;
+          drawnEdges.add(edgeKey);
+          const neighbor = nodeMap[neighborId];
+          if (!neighbor) return;
+
+          const line = L.polyline(
+            [[node.lat, node.lon], [neighbor.lat, neighbor.lon]],
+            { color: '#4285f4', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }
+          ).addTo(mainMap);
+
+          // Clicking the line opens nearest panorama to click point
+          line.on('click', (e) => {
+            const clickLat = e.latlng.lat;
+            const clickLon = e.latlng.lng;
+            // Find nearest node to click point
+            let nearest = node;
+            let minDist = calcDist(clickLat, clickLon, node.lat, node.lon);
+            const dN = calcDist(clickLat, clickLon, neighbor.lat, neighbor.lon);
+            if (dN < minDist) { nearest = neighbor; }
+            openViewer(nearest.id);
+          });
+
+          // Hover styling
+          line.on('mouseover', () => line.setStyle({ weight: 8, opacity: 1, color: '#1a73e8' }));
+          line.on('mouseout',  () => line.setStyle({ weight: 5, opacity: 0.85, color: '#4285f4' }));
+        });
+      });
+
+      // Fit map to all nodes
+      const bounds = L.latLngBounds(nodes.map(n => [n.lat, n.lon]));
+      mainMap.fitBounds(bounds, { padding: [40, 40] });
+
+      // Count badge
+      const badge = document.getElementById('count-badge');
+      badge.style.display = 'block';
+      document.getElementById('node-count').textContent = nodes.length;
+    }
+
+    // Simple distance helper for click-on-line nearest node
+    function calcDist(lat1, lon1, lat2, lon2) {
+      const dx = lat2 - lat1, dy = lon2 - lon1;
+      return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    // ── Viewer ──────────────────────────────────────────────────────────────
+    async function openViewer(nodeId) {
+      const node = nodeMap[nodeId];
+      if (!node) return;
+
+      // Try local panoramas folder first (no CORS), fallback to R2
+      const localUrl = `./panoramas/${node.id}.webp`;
+      const remoteUrl = `${BASE_URL}/${node.id}.webp`;
+      const panoramaUrl = await checkUrl(localUrl) ? localUrl : remoteUrl;
+
+      const headingDeg = node.heading * (180 / Math.PI);
+      const hotSpots = buildHotSpots(node);
+
+      if (!viewer) {
+        // Initial Viewer Creation
+        currentNodeId = nodeId;
+        viewer = pannellum.viewer('panorama', {
+          default: { firstScene: nodeId },
+          scenes: {
+            [nodeId]: {
+              type: 'equirectangular',
+              panorama: panoramaUrl,
+              northOffset: headingDeg,
+              hotSpots: hotSpots
+            }
+          },
+          autoLoad: true,
+          compass: false,
+          showControls: true,
+          mouseZoom: true,
+          hfov: 100,
+          backgroundColor: [10, 13, 20],
+        });
+      } else {
+        // Smooth Transition to Next Node
+        const oldNode = nodeMap[currentNodeId];
+        let nextYaw = 0;
+        let nextPitch = 0;
+        
+        if (oldNode) {
+           const currentYaw = viewer.getYaw();
+           const currentPitch = viewer.getPitch();
+           const oldHeadingDeg = oldNode.heading * (180 / Math.PI);
+           
+           // Calculate true real-world heading of the camera
+           const trueHeading = oldHeadingDeg + currentYaw;
+           
+           // Calculate what the new yaw should be to maintain the exact same real-world heading
+           nextYaw = trueHeading - headingDeg;
+           nextPitch = currentPitch;
+        }
+
+        currentNodeId = nodeId;
+
+        // Add new scene dynamically
+        viewer.addScene(nodeId, {
+           type: 'equirectangular',
+           panorama: panoramaUrl,
+           northOffset: headingDeg,
+           hotSpots: hotSpots
+        });
+        
+        // Crossfade to it seamlessly while preserving look direction
+        viewer.loadScene(nodeId, nextPitch, nextYaw, viewer.getHfov());
+      }
+
+      // Update UI elements
+      document.getElementById('map-view').style.opacity = '0';
+      document.getElementById('map-view').style.pointerEvents = 'none';
+      document.getElementById('viewer-view').style.display = 'block';
+      document.getElementById('back-btn').style.display = 'flex';
+      document.getElementById('node-info').style.display = 'flex';
+      document.getElementById('minimap-wrap').style.display = 'block';
+      document.getElementById('count-badge').style.display = 'none';
+
+      document.getElementById('node-address').textContent = node.address || 'Unknown location';
+      document.getElementById('node-date').textContent = node.date || '';
+
+      setActiveMarker(nodeId);
+      initMiniMap(node);
+    }
+
+    // Check if a URL is accessible (for local file probe)
+    async function checkUrl(url) {
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        return r.ok;
+      } catch { return false; }
+    }
+
+    function buildHotSpots(node) {
+      return (node.neighbors || []).map(neighborId => {
+        const neighbor = nodeMap[neighborId];
+        if (!neighbor) return null;
+
+        const bearing = calcBearing(node.lat, node.lon, neighbor.lat, neighbor.lon);
+        const headingDeg = node.heading * (180 / Math.PI);
+        // Yaw relative to the panorama's north offset
+        const yaw = bearing - headingDeg;
+
+        return {
+          id: neighborId,
+          type: 'custom',
+          pitch: -20,
+          yaw: yaw,
+          cssClass: 'pano-hotspot',
+          createTooltipFunc: createArrowHotspot,
+          createTooltipArgs: { neighborId, neighbor, bearing },
+          clickHandlerFunc: () => openViewer(neighborId),
+        };
+      }).filter(Boolean);
+    }
+
+    function createArrowHotspot(hotSpotDiv, args) {
+      hotSpotDiv.style.cssText = `
+        width: 80px; height: 80px;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        cursor: pointer;
+        user-select: none;
+      `;
+
+      // Google Maps style flat chevron
+      const arrow = document.createElement('div');
+      arrow.innerHTML = `<svg viewBox="0 0 100 100" fill="rgba(255,255,255,0.85)" style="width:60px;height:60px;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.6)); transform: perspective(200px) rotateX(50deg);">
+        <path d="M 10 70 L 50 30 L 90 70 L 80 80 L 50 50 L 20 80 Z"/>
+      </svg>`;
+      arrow.style.cssText = `
+        transition: transform 0.2s, filter 0.2s;
+      `;
+
+      hotSpotDiv.appendChild(arrow);
+      hotSpotDiv.addEventListener('mouseenter', () => {
+        arrow.style.transform = 'scale(1.2)';
+        arrow.querySelector('svg').style.fill = 'rgba(255,255,255,1)';
+        arrow.querySelector('svg').style.filter = 'drop-shadow(0 4px 10px rgba(0,0,0,0.8)) drop-shadow(0 0 8px rgba(255,255,255,0.4))';
+      });
+      hotSpotDiv.addEventListener('mouseleave', () => {
+        arrow.style.transform = '';
+        arrow.querySelector('svg').style.fill = 'rgba(255,255,255,0.85)';
+        arrow.querySelector('svg').style.filter = 'drop-shadow(0 4px 6px rgba(0,0,0,0.6))';
+      });
+
+      // Address label
+      if (args.neighbor.address) {
+        const label = document.createElement('div');
+        label.textContent = args.neighbor.address;
+        label.style.cssText = `
+          margin-top: -10px;
+          background: rgba(10,13,20,0.7);
+          color: #f0f2ff; font-size: 11px; font-family: Inter, sans-serif;
+          padding: 2px 6px; border-radius: 4px;
+          white-space: nowrap; max-width: 100px;
+          overflow: hidden; text-overflow: ellipsis;
+          opacity: 0.8;
+        `;
+        hotSpotDiv.appendChild(label);
+      }
+    }
+
+    function closeViewer() {
+      if (viewer) { viewer.destroy(); viewer = null; }
+      currentNodeId = null;
+
+      document.getElementById('map-view').style.opacity = '1';
+      document.getElementById('map-view').style.pointerEvents = '';
+      document.getElementById('viewer-view').style.display = 'none';
+      document.getElementById('back-btn').style.display = 'none';
+      document.getElementById('node-info').style.display = 'none';
+      document.getElementById('minimap-wrap').style.display = 'none';
+      document.getElementById('count-badge').style.display = 'block';
+
+      // Clear active marker
+      Object.values(markerMap).forEach(({ el }) => el.classList.remove('active'));
+    }
+
+    // ── Mini-map ─────────────────────────────────────────────────────────────
+    function initMiniMap(node) {
+      if (!miniMapInst) {
+        miniMapInst = L.map('minimap', {
+          center: [node.lat, node.lon],
+          zoom: 18,
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+        });
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21 })
+          .addTo(miniMapInst);
+
+        miniMarker = L.circleMarker([node.lat, node.lon], {
+          radius: 7,
+          color: '#f5a623',
+          fillColor: '#ff6a00',
+          fillOpacity: 1,
+          weight: 2,
+        }).addTo(miniMapInst);
+      } else {
+        miniMapInst.setView([node.lat, node.lon]);
+        miniMarker.setLatLng([node.lat, node.lon]);
+      }
+    }
+
+    // ── Marker active state ───────────────────────────────────────────────────
+    function setActiveMarker(nodeId) {
+      Object.entries(markerMap).forEach(([id, { el }]) => {
+        el.classList.toggle('active', id === nodeId);
+      });
+    }
+
+    // ── Geo helpers ──────────────────────────────────────────────────────────
+    function calcBearing(lat1, lon1, lat2, lon2) {
+      const toRad = d => d * Math.PI / 180;
+      const toDeg = r => r * 180 / Math.PI;
+      const dLon = toRad(lon2 - lon1);
+      const φ1 = toRad(lat1), φ2 = toRad(lat2);
+      const y = Math.sin(dLon) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dLon);
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    // ── UI helpers ───────────────────────────────────────────────────────────
+    function hideLoading() {
+      document.getElementById('loading-overlay').style.display = 'none';
+    }
+
+    function showError(msg) {
+      const toast = document.getElementById('error-toast');
+      toast.textContent = '⚠️ ' + msg;
+      toast.style.display = 'block';
+      setTimeout(() => toast.style.display = 'none', 5000);
+      document.getElementById('loading-sub').textContent = msg;
+    }
+
+    // ── Keyboard Navigation ───────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (!viewer || !currentNodeId) return;
+
+      if (e.key === 'Escape') {
+        closeViewer();
+        return;
+      }
+
+      // Effortless Navigation: Forward/Backward
+      const isForward = e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W';
+      const isBackward = e.key === 'ArrowDown' || e.key === 's' || e.key === 'S';
+
+      if (isForward || isBackward) {
+        const currentYaw = viewer.getYaw();
+        const referenceYaw = isForward ? currentYaw : currentYaw + 180;
+
+        const node = nodeMap[currentNodeId];
+        if (!node || !node.neighbors) return;
+
+        let bestNeighbor = null;
+        let smallestDiff = 50; // Max 50 degrees difference to consider it valid
+
+        node.neighbors.forEach(neighborId => {
+          const neighbor = nodeMap[neighborId];
+          if (!neighbor) return;
+
+          const bearing = calcBearing(node.lat, node.lon, neighbor.lat, neighbor.lon);
+          const headingDeg = node.heading * (180 / Math.PI);
+          let targetYaw = bearing - headingDeg;
+          
+          // Normalize to -180 to +180 relative to the reference yaw
+          let diff = (targetYaw - referenceYaw) % 360;
+          if (diff < -180) diff += 360;
+          if (diff > 180) diff -= 360;
+          diff = Math.abs(diff);
+
+          if (diff < smallestDiff) {
+            smallestDiff = diff;
+            bestNeighbor = neighborId;
+          }
+        });
+
+        if (bestNeighbor) {
+          openViewer(bestNeighbor);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
