@@ -13,7 +13,7 @@ import '../models/building.dart';
 import '../models/unit.dart';
 import '../main.dart';
 import 'street_view_screen.dart';
-import 'panorama_download_screen.dart';
+
 import '../utils/building_dialogs.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -38,6 +38,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final buildingsAsync = ref.watch(buildingsProvider);
     final collectorAsync = ref.watch(collectorProfileProvider);
     final isAdmin = collectorAsync.value?.role == 'admin';
+    final buildingToMove = ref.watch(moveBuildingProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -77,28 +78,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             tooltip: 'Reports',
             onPressed: () => context.push('/reports'),
           ),
-          _NavIconButton(
-            icon: Icons.threesixty,
-            tooltip: '360 Street View',
-            color: AppColors.gold,
-            onPressed: () {
-              final pos = ref.read(liveLocationProvider).value;
-              if (pos != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => PanoramaDownloadScreen(
-                      lat: pos.latitude,
-                      lon: pos.longitude,
-                    ),
-                  ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Waiting for location...')),
-                );
-              }
-            },
-          ),
+
           _NavIconButton(
             icon: Icons.view_in_ar,
             tooltip: 'AR Street View',
@@ -111,9 +91,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: Column(
+      floatingActionButton: buildingToMove != null 
+        ? Padding(
+            padding: const EdgeInsets.only(left: 30.0), // Adjust for FAB padding
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'cancelMoveBtn',
+                  backgroundColor: Colors.red,
+                  onPressed: () => ref.read(moveBuildingProvider.notifier).setState(null),
+                  label: const Text('Cancel', style: TextStyle(color: Colors.white)),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+                FloatingActionButton.extended(
+                  heroTag: 'confirmMoveBtn',
+                  backgroundColor: Colors.green,
+                  onPressed: () async {
+                    final center = _mapController.camera.center;
+                    await ref.read(buildingServiceProvider).updateBuildingLocation(
+                      buildingToMove.id, 
+                      center.latitude, 
+                      center.longitude
+                    );
+                    ref.read(moveBuildingProvider.notifier).setState(null);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tag relocated successfully!')));
+                    }
+                  },
+                  label: const Text('Confirm Relocation', style: TextStyle(color: Colors.white)),
+                  icon: const Icon(Icons.check, color: Colors.white),
+                ),
+              ],
+            ),
+          )
+        : Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          FloatingActionButton.extended(
+            heroTag: 'tagHereBtn',
+            backgroundColor: AppColors.saffron,
+            onPressed: () {
+              final pos = ref.read(liveLocationProvider).value;
+              if (pos != null) {
+                if (pos.accuracy > 20.0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('GPS accuracy is poor (${pos.accuracy.toStringAsFixed(1)}m). Please wait for a better signal.')),
+                  );
+                  return;
+                }
+                showCreateBuildingDialog(context, ref, LatLng(pos.latitude, pos.longitude));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Waiting for location...')),
+                );
+              }
+            },
+            icon: const Icon(Icons.add_location_alt, color: Colors.white),
+            label: const Text('Tag Here', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'streetViewBtn',
             backgroundColor: Colors.indigo,
@@ -160,58 +197,83 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           final initialCenter = LatLng(position.latitude, position.longitude);
 
-          return FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: initialCenter,
-              initialZoom: 18.0, // Zoom in a bit more for building view
-              onTap: (tapPosition, point) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => StreetViewScreen(
-                      lat: point.latitude,
-                      lon: point.longitude,
+          return Stack(
+            children: [
+              FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: initialCenter,
+                  initialZoom: 18.0, // Zoom in a bit more for building view
+                  onTap: (tapPosition, point) {
+                    if (buildingToMove != null) return;
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => StreetViewScreen(
+                          lat: point.latitude,
+                          lon: point.longitude,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                    userAgentPackageName: 'com.Dcross.ganeshtracker',
+                  ),
+                  MarkerLayer(
+                    markers: buildingsAsync.when(
+                      data: (buildings) => _buildMarkers(context, ref, buildings),
+                      loading: () => [],
+                      error: (err, stack) => [],
                     ),
                   ),
-                );
-              },
-              onLongPress: (tapPosition, point) {
-                showCreateBuildingDialog(context, ref, point);
-              },
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-                userAgentPackageName: 'com.Dcross.ganeshtracker',
-              ),
-              MarkerLayer(
-                markers: buildingsAsync.when(
-                  data: (buildings) => _buildMarkers(context, ref, buildings),
-                  loading: () => [],
-                  error: (err, stack) => [],
-                ),
-              ),
-              MarkerLayer(
-                markers: liveLocationAsync.maybeWhen(
-                  data: (pos) => pos == null ? [] : [
-                    Marker(
-                      point: LatLng(pos.latitude, pos.longitude),
-                      width: 30,
-                      height: 30,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                  MarkerLayer(
+                    markers: liveLocationAsync.maybeWhen(
+                      data: (pos) => pos == null ? [] : [
+                        Marker(
+                          point: LatLng(pos.latitude, pos.longitude),
+                          width: 30,
+                          height: 30,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                            ),
+                            child: const Icon(Icons.person, color: Colors.white, size: 18),
+                          ),
                         ),
-                        child: const Icon(Icons.person, color: Colors.white, size: 18),
-                      ),
+                      ],
+                      orElse: () => [],
                     ),
-                  ],
-                  orElse: () => [],
+                  ),
+                ],
+              ),
+              Positioned(
+                top: 10,
+                left: 10,
+                right: 10,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All', 'all', Colors.blue),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Not Collected', 'red', Colors.red),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Pending', 'orange', Colors.orange),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Completed', 'green', Colors.green),
+                    ],
+                  ),
                 ),
               ),
+              if (buildingToMove != null)
+                const Center(
+                  child: Icon(Icons.add, color: Colors.red, size: 40),
+                ),
             ],
           );
         },
@@ -242,7 +304,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   List<Marker> _buildMarkers(BuildContext context, WidgetRef ref, List<Building> buildings) {
-    return buildings.map((building) {
+    var filteredBuildings = buildings.where((building) {
+      if (_selectedFilter == 'all') return true;
+      if (_selectedFilter == 'red' && building.collectedCount == 0) return true;
+      if (_selectedFilter == 'green' && building.collectedCount >= building.totalUnits) return true;
+      if (_selectedFilter == 'orange' && building.collectedCount > 0 && building.collectedCount < building.totalUnits) return true;
+      return false;
+    }).toList();
+
+    return filteredBuildings.map((building) {
       Color pinColor;
       if (building.collectedCount == 0) {
         pinColor = Colors.red;

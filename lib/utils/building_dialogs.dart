@@ -4,13 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart' as latlong;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/building.dart';
 import '../models/unit.dart';
 import '../providers/auth_provider.dart';
 import '../providers/map_provider.dart';
-import '../main.dart'; // For AppColors if needed
-
+import '../main.dart';
+import '../screens/home_screen.dart';
+import '../screens/street_view_screen.dart';
 void _showAddUnitDialog(BuildContext context, WidgetRef ref, Building building) {
   final controller = TextEditingController();
   showDialog(
@@ -76,7 +78,15 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                             tooltip: 'Add Unit',
                             onPressed: () => _showAddUnitDialog(context, ref, building),
                           ),
-                          if (ref.read(collectorProfileProvider).value?.role == 'admin')
+                          if (ref.read(collectorProfileProvider).value?.role == 'admin') ...[
+                            IconButton(
+                              icon: const Icon(Icons.my_location, color: Colors.orange),
+                              tooltip: 'Relocate Tag',
+                              onPressed: () {
+                                ref.read(moveBuildingProvider.notifier).setState(building);
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                            ),
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               tooltip: 'Delete Building',
@@ -102,6 +112,7 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                                 }
                               },
                             ),
+                          ],
                         ],
                       ),
                     ),
@@ -197,7 +208,15 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                         tooltip: 'Add Unit',
                         onPressed: () => _showAddUnitDialog(context, ref, building),
                       ),
-                      if (ref.read(collectorProfileProvider).value?.role == 'admin')
+                      if (ref.read(collectorProfileProvider).value?.role == 'admin') ...[
+                        IconButton(
+                          icon: const Icon(Icons.my_location, color: Colors.orange),
+                          tooltip: 'Relocate Tag',
+                          onPressed: () {
+                            ref.read(moveBuildingProvider.notifier).setState(building);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                        ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
                           tooltip: 'Delete Building',
@@ -223,7 +242,8 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                           }
                         },
                       ),
-                    ], // Closes children
+                      ],
+                      ], // Closes children
                   ), // Closes Row
                   _buildAmountForm(context, ref, building, unit),
                 ],
@@ -236,20 +256,20 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
   );
 }
 
-void showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit) {
+void showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit, {bool fromReports = false}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     builder: (ctx) {
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: _buildAmountForm(ctx, ref, building, unit),
+        child: _buildAmountForm(ctx, ref, building, unit, fromReports: fromReports),
       );
     },
   );
 }
 
-Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit) {
+Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit, {bool fromReports = false}) {
   final isAdmin = ref.read(collectorProfileProvider).value?.role == 'admin';
   final isAlreadyCollected = unit.status == 'collected';
 
@@ -258,9 +278,34 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
   String? photoBase64 = unit.photoBase64;
   bool isEditing = false;
 
+  void showZoomableImage(BuildContext ctx, String base64String) {
+    showDialog(
+      context: ctx,
+      builder: (c) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              panEnabled: true,
+              minScale: 0.5,
+              maxScale: 4,
+              child: Image.memory(base64Decode(base64String)),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.of(c).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   return StatefulBuilder(
     builder: (ctx, setState) {
-      if (isAlreadyCollected && !isEditing) {
+      if (isAlreadyCollected && (!isAdmin || (fromReports && !isEditing))) {
         return Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -311,29 +356,7 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
               const SizedBox(height: 16),
               if (unit.photoBase64 != null) ...[
                 GestureDetector(
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => Dialog(
-                        backgroundColor: Colors.transparent,
-                        child: Stack(
-                          alignment: Alignment.topRight,
-                          children: [
-                            InteractiveViewer(
-                              child: Image.memory(
-                                base64Decode(unit.photoBase64!),
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                              onPressed: () => Navigator.of(ctx).pop(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                  onTap: () => showZoomableImage(context, unit.photoBase64!),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.memory(
@@ -351,7 +374,17 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
               Text('Amount Collected: ₹${unit.amount}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               if (unit.collectedBy != null && unit.collectedBy!.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Text('Collected By: ${unit.collectedBy}', style: const TextStyle(fontSize: 14)),
+                FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance.collection('collectors').doc(unit.collectedBy).get(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData || !snapshot.data!.exists) {
+                      return const Text('Collected By: Unknown', style: TextStyle(fontSize: 14));
+                    }
+                    final collectorData = snapshot.data!.data() as Map<String, dynamic>;
+                    final collectorName = collectorData['name'] ?? 'Unknown';
+                    return Text('Collected By: $collectorName', style: const TextStyle(fontSize: 14));
+                  }
+                ),
               ],
               if (unit.collectedAt != null) ...[
                 const SizedBox(height: 4),
@@ -359,7 +392,42 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
                 const SizedBox(height: 4),
                 Text('Time: ${unit.collectedAt!.toLocal().toString().split(' ')[1].split('.')[0]}', style: const TextStyle(fontSize: 14)),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              if (fromReports) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.map, color: Colors.white, size: 18),
+                      label: const Text('2D Map', style: TextStyle(color: Colors.white)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => HomeScreen(initialLat: building.lat, initialLng: building.lng)
+                          ),
+                        );
+                      },
+                    ),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.streetview, color: Colors.white, size: 18),
+                      label: const Text('Street View', style: TextStyle(color: Colors.white)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => StreetViewScreen(lat: building.lat, lon: building.lng)
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+              const SizedBox(height: 8),
               if (!isAdmin)
                 const Text('Only admins can edit collected units.', style: TextStyle(color: Colors.grey))
               else
@@ -445,7 +513,7 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
                                   newName: controller.text.trim(),
                                 );
                                 if (ctx.mounted) Navigator.pop(ctx);
-                                if (context.mounted) Navigator.pop(context); // Close the sheet to refresh
+                                if (context.mounted) Navigator.pop(context);
                               }
                             },
                             child: const Text('SAVE'),
@@ -463,29 +531,7 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
                 alignment: Alignment.topRight,
                 children: [
                   GestureDetector(
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => Dialog(
-                          backgroundColor: Colors.transparent,
-                          child: Stack(
-                            alignment: Alignment.topRight,
-                            children: [
-                              InteractiveViewer(
-                                child: Image.memory(
-                                  base64Decode(photoBase64!),
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                                onPressed: () => Navigator.of(ctx).pop(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                    onTap: () => showZoomableImage(context, photoBase64!),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.memory(
@@ -510,9 +556,11 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
                   child: TextField(
                     controller: amountController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Amount (₹)',
-                      border: OutlineInputBorder(),
+                    autofocus: photoBase64 != null,
+                    enabled: photoBase64 != null,
+                    decoration: InputDecoration(
+                      labelText: photoBase64 == null ? 'Capture image first' : 'Amount (₹)',
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
@@ -540,9 +588,9 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: isSubmitting ? null : () async {
+                onPressed: (isSubmitting || photoBase64 == null) ? null : () async {
                   final amount = double.tryParse(amountController.text) ?? 0.0;
-                  if (amount < 0) return;
+                  if (amount <= 0 && unit.status != 'collected') return;
 
                   final authUser = ref.read(authStateProvider).value;
                   if (authUser == null) return;
@@ -552,15 +600,12 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
                   try {
                     final buildingService = ref.read(buildingServiceProvider);
                     
-                    if (amount == 0) {
-                      // If user enters 0, reset the collection entirely (only if it was collected)
-                      if (unit.status == 'collected') {
-                        await buildingService.resetUnitCollection(
-                          buildingId: building.id,
-                          unitId: unit.id,
-                          previousAmount: unit.amount,
-                        );
-                      }
+                    if (amount == 0 && unit.status == 'collected') {
+                      await buildingService.resetUnitCollection(
+                        buildingId: building.id,
+                        unitId: unit.id,
+                        previousAmount: unit.amount,
+                      );
                     } else {
                       await buildingService.markUnitCollected(
                         buildingId: building.id,
@@ -570,7 +615,6 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
                         photoBase64: photoBase64,
                       );
                     }
-                    
                     if (ctx.mounted) Navigator.of(ctx).pop();
                   } catch (e) {
                      setState(() => isSubmitting = false);
@@ -590,6 +634,7 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
     }
   );
 }
+
 
 void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLng point) {
   final nameController = TextEditingController();

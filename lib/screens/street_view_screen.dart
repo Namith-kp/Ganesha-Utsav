@@ -69,10 +69,11 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       final currentNode = ref.read(nodeByIdProvider(currentId));
       final nextNode = ref.read(nodeByIdProvider(nextId));
       if (currentNode != null && nextNode != null) {
-        double currentHeading = currentNode.heading * (180.0 / math.pi);
+        // heading is already in degrees from the backend!
+        double currentHeading = currentNode.heading;
         double geographicDirection = _cameraLongitude.value + currentHeading;
         
-        double nextHeading = nextNode.heading * (180.0 / math.pi);
+        double nextHeading = nextNode.heading;
         _initialLongitude = geographicDirection - nextHeading;
         _initialLongitude = (_initialLongitude + 540) % 360 - 180;
         
@@ -275,7 +276,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         latlong.LatLng(building.lat, building.lng),
       );
       
-      double headingDegrees = currentNode.heading * (180.0 / math.pi);
+      // heading is already in degrees
+      double headingDegrees = currentNode.heading;
       double relativeYaw = bearing - headingDegrees;
       relativeYaw = (relativeYaw + 540) % 360 - 180;
       
@@ -334,6 +336,9 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         double heightAboveCamera = 3.0; 
         double pitchRad = math.atan2(heightAboveCamera, dist == 0 ? 0.1 : dist);
         double pitchDeg = pitchRad * (180.0 / math.pi);
+        
+        // Clamp pitch to avoid extreme distortion at the poles (which makes tags look tiny/shrunk)
+        pitchDeg = pitchDeg.clamp(-25.0, 25.0);
         
         hotspots.add(
           Hotspot(
@@ -492,8 +497,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               onLongPressStart: (longitude, latitude, tilt) {
                 if (currentNode == null) return;
                 
-                // Convert heading from radians to degrees
-                double headingDegrees = currentNode.heading * (180.0 / math.pi);
+                // heading is already in degrees
+                double headingDegrees = currentNode.heading;
                 
                 // Absolute bearing of the tap
                 double absoluteBearing = headingDegrees + longitude;
@@ -558,8 +563,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                               latlong.LatLng(neighborNode.lat, neighborNode.lon),
                             );
                             
-                            // Convert heading from radians to degrees
-                            double headingDegrees = currentNode.heading * (180.0 / math.pi);
+                            // heading is already in degrees
+                            double headingDegrees = currentNode.heading;
                             
                             // Calculate base yaw (where the node is when camera looks straight)
                             double baseYaw = bearing - headingDegrees;
@@ -689,7 +694,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                                 child: ValueListenableBuilder<double>(
                                   valueListenable: _cameraLongitude,
                                   builder: (context, cameraLon, child) {
-                                    double headingDegrees = currentNode.heading * (180.0 / math.pi);
+                                    // heading is already in degrees
+                                    double headingDegrees = currentNode.heading;
                                     double absoluteBearing = headingDegrees + cameraLon;
                                     double angleRad = absoluteBearing * (math.pi / 180.0);
                                     
@@ -750,17 +756,17 @@ class FieldOfViewPainter extends CustomPainter {
     final fillPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          Colors.blue.withOpacity(0.9),
-          Colors.blue.withOpacity(0.3),
+          Colors.blueAccent.withOpacity(0.95),
+          Colors.blueAccent.withOpacity(0.6),
         ],
-        stops: const [0.3, 1.0],
+        stops: const [0.4, 1.0],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
 
     // Subtle border to make it pop against the map
     final strokePaint = Paint()
-      ..color = Colors.blue.withOpacity(0.8)
+      ..color = Colors.white.withOpacity(0.9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = 2.0;
 
     final path = Path();
     path.moveTo(center.dx, center.dy);

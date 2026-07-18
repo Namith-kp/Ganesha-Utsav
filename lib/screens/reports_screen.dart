@@ -221,7 +221,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     subtitle: Text(dateStr),
                     trailing: Text('₹${unit.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
                     onTap: () {
-                      showUnitAmountForm(context, ref, building, unit);
+                      showUnitAmountForm(context, ref, building, unit, fromReports: true);
                     },
                   ),
                 );
