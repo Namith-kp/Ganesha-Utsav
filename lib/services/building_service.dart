@@ -184,6 +184,7 @@ class BuildingService {
     required double amount,
     required String collectedBy,
     String? photoBase64,
+    required String paymentMethod,
   }) async {
     final batch = _firestore.batch();
     final buildingRef = _firestore.collection('buildings').doc(buildingId);
@@ -232,6 +233,7 @@ class BuildingService {
         'status': 'collected',
         'amount': amount,
         'collectedBy': collectedBy,
+        'paymentMethod': paymentMethod,
         'collectedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         if (photoBase64 != null) 'photoBase64': photoBase64,
@@ -253,7 +255,7 @@ class BuildingService {
   }
 
   // Get all flattened collection data for CSV export
-  Future<List<Map<String, dynamic>>> getFlattenedCollectionData() async {
+  Future<List<Map<String, dynamic>>> getFlattenedCollectionData({String? filterCollectorId}) async {
     final buildingsSnapshot = await _firestore.collection('buildings').get();
     
     final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
@@ -263,11 +265,14 @@ class BuildingService {
       final List<Map<String, dynamic>> buildingData = [];
       for (final unitDoc in unitsSnapshot.docs) {
         final unitData = unitDoc.data();
+        if (filterCollectorId != null && unitData['collectedBy'] != filterCollectorId) continue;
+        
         buildingData.add({
           'Building Name': buildingName,
           'Unit Name': unitData['unitLabel'] ?? '',
           'Status': unitData['status'] ?? 'pending',
           'Amount Collected': (unitData['amount'] as num?)?.toDouble() ?? 0.0,
+          'Payment Method': unitData['paymentMethod'] ?? 'Cash',
           'Collected By': unitData['collectedBy'] ?? '',
           'Collected At': (unitData['collectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
         });
@@ -280,7 +285,7 @@ class BuildingService {
   }
 
   // Get detailed collections for the reports UI
-  Future<List<Map<String, dynamic>>> getDetailedCollections() async {
+  Future<List<Map<String, dynamic>>> getDetailedCollections({String? filterCollectorId}) async {
     // Fetch buildings
     final buildingsSnapshot = await _firestore.collection('buildings').get();
     
@@ -293,6 +298,8 @@ class BuildingService {
       for (final unitDoc in unitsSnapshot.docs) {
         final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
         if (unit.status == 'collected') {
+          if (filterCollectorId != null && unit.collectedBy != filterCollectorId) continue;
+          
           buildingCollections.add({
             'unit': unit,
             'building': building,
@@ -363,6 +370,7 @@ class BuildingService {
       'status': 'pending',
       'amount': 0.0,
       'collectedBy': null,
+      'paymentMethod': null,
       'collectedAt': null,
       'photoBase64': null,
       'updatedAt': FieldValue.serverTimestamp(),

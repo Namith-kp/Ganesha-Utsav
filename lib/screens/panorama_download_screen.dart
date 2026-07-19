@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../providers/panorama_download_provider.dart';
 import '../main.dart';
 import 'street_view_screen.dart';
@@ -117,8 +118,8 @@ class _PromptView extends StatelessWidget {
                   color: AppColors.bgCard,
                   border: Border.all(color: AppColors.borderLight),
                 ),
-                child: const Icon(Icons.download_for_offline_rounded,
-                    size: 52, color: AppColors.gold),
+                child: const Icon(LucideIcons.downloadCloud,
+                    size: 52, color: AppColors.accent),
               ),
             ),
             const SizedBox(height: 32),
@@ -126,14 +127,15 @@ class _PromptView extends StatelessWidget {
             // Title
             ShaderMask(
               shaderCallback: (bounds) => const LinearGradient(
-                colors: [AppColors.gold, AppColors.saffron],
+                colors: [AppColors.accent, AppColors.accentLight],
               ).createShader(bounds),
               child: Text(
                 'Download Street View',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
                   color: Colors.white,
                 ),
               ),
@@ -143,7 +145,7 @@ class _PromptView extends StatelessWidget {
             Text(
               'Download all panorama images to your device for instant, offline access. This only needs to be done once.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: AppColors.textSecondary,
                 height: 1.6,
@@ -157,9 +159,9 @@ class _PromptView extends StatelessWidget {
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: [
-                _InfoChip(icon: Icons.wifi_off, label: 'Works Offline'),
-                _InfoChip(icon: Icons.flash_on, label: 'Instant Loading'),
-                _InfoChip(icon: Icons.refresh, label: 'Skips Downloaded'),
+                _InfoChip(icon: LucideIcons.wifiOff, label: 'Works Offline'),
+                _InfoChip(icon: LucideIcons.zap, label: 'Instant Loading'),
+                _InfoChip(icon: LucideIcons.refreshCw, label: 'Skips Downloaded'),
               ],
             ),
             const SizedBox(height: 44),
@@ -167,7 +169,7 @@ class _PromptView extends StatelessWidget {
             // Download button
             _GoldButton(
               label: 'Download Now',
-              icon: Icons.download_rounded,
+              icon: LucideIcons.download,
               onTap: onDownload,
             ),
             const SizedBox(height: 16),
@@ -175,10 +177,10 @@ class _PromptView extends StatelessWidget {
             // Skip button
             TextButton.icon(
               onPressed: onSkip,
-              icon: const Icon(Icons.wifi, size: 18, color: AppColors.textMuted),
+              icon: const Icon(LucideIcons.wifi, size: 18, color: AppColors.textMuted),
               label: Text(
                 'Skip — Use Online Mode',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   color: AppColors.textMuted,
                   fontSize: 14,
                 ),
@@ -229,14 +231,14 @@ class _DownloadingView extends ConsumerWidget {
                           value: value,
                           strokeWidth: 5,
                           backgroundColor: AppColors.border,
-                          valueColor: const AlwaysStoppedAnimation(AppColors.gold),
+                          valueColor: const AlwaysStoppedAnimation(AppColors.accent),
                         ),
                         Text(
                           '${(value * 100).toInt()}%',
-                          style: GoogleFonts.outfit(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.gold,
+                            color: AppColors.accent,
                           ),
                         ),
                       ],
@@ -247,8 +249,9 @@ class _DownloadingView extends ConsumerWidget {
 
                 Text(
                   progress.isDone ? 'Download Complete! 🎉' : 'Downloading Panoramas...',
-                  style: GoogleFonts.outfit(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
+                    letterSpacing: -0.5,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
                   ),
@@ -265,7 +268,7 @@ class _DownloadingView extends ConsumerWidget {
                       value: value,
                       minHeight: 8,
                       backgroundColor: AppColors.bgCard,
-                      valueColor: const AlwaysStoppedAnimation(AppColors.gold),
+                      valueColor: const AlwaysStoppedAnimation(AppColors.accent),
                     ),
                   ),
                 ),
@@ -273,7 +276,7 @@ class _DownloadingView extends ConsumerWidget {
 
                 Text(
                   progress.label,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: AppColors.textSecondary,
                   ),
@@ -283,7 +286,7 @@ class _DownloadingView extends ConsumerWidget {
                   const SizedBox(height: 20),
                   Text(
                     progress.error!,
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       color: AppColors.crimson,
                     ),
@@ -295,7 +298,7 @@ class _DownloadingView extends ConsumerWidget {
                 Text(
                   'Keep the app open while downloading.\nYou can use offline mode next time.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: AppColors.textMuted,
                     height: 1.6,
@@ -307,7 +310,7 @@ class _DownloadingView extends ConsumerWidget {
         );
       },
       loading: () => const Center(
-        child: CircularProgressIndicator(color: AppColors.gold),
+        child: CircularProgressIndicator(color: AppColors.accent),
       ),
       error: (err, _) => Center(
         child: Padding(
@@ -315,13 +318,13 @@ class _DownloadingView extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, color: AppColors.crimson, size: 52),
+              const Icon(LucideIcons.alertCircle, color: AppColors.crimson, size: 52),
               const SizedBox(height: 16),
               Text('Download failed:\n$err',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(color: AppColors.textSecondary)),
+                  style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
               const SizedBox(height: 24),
-              _GoldButton(label: 'Open Online Mode', icon: Icons.wifi, onTap: onDone),
+              _GoldButton(label: 'Open Online Mode', icon: LucideIcons.wifi, onTap: onDone),
             ],
           ),
         ),
@@ -349,10 +352,10 @@ class _InfoChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppColors.gold),
+          Icon(icon, size: 14, color: AppColors.accent),
           const SizedBox(width: 6),
           Text(label,
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                   fontSize: 12, color: AppColors.textSecondary)),
         ],
       ),
@@ -374,12 +377,12 @@ class _GoldButton extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [AppColors.gold, AppColors.saffron],
+            colors: [AppColors.accent, AppColors.accentLight],
           ),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: AppColors.gold.withOpacity(0.35),
+              color: AppColors.accent.withOpacity(0.35),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -396,7 +399,7 @@ class _GoldButton extends StatelessWidget {
                 Icon(icon, color: Colors.white, size: 20),
                 const SizedBox(width: 8),
                 Text(label,
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
                       fontSize: 15,

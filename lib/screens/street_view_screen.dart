@@ -16,6 +16,9 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import '../utils/building_dialogs.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../main.dart';
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371e3; // metres
   final phi1 = lat1 * math.pi / 180;
@@ -69,11 +72,10 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       final currentNode = ref.read(nodeByIdProvider(currentId));
       final nextNode = ref.read(nodeByIdProvider(nextId));
       if (currentNode != null && nextNode != null) {
-        // heading is already in degrees from the backend!
-        double currentHeading = currentNode.heading;
+        double currentHeading = currentNode.heading * (180.0 / math.pi);
         double geographicDirection = _cameraLongitude.value + currentHeading;
         
-        double nextHeading = nextNode.heading;
+        double nextHeading = nextNode.heading * (180.0 / math.pi);
         _initialLongitude = geographicDirection - nextHeading;
         _initialLongitude = (_initialLongitude + 540) % 360 - 180;
         
@@ -256,6 +258,9 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
   List<Hotspot> _buildHotspots(StreetViewNode? currentNode, List<Building> buildings) {
     if (currentNode == null) return [];
     
+    final profile = ref.read(collectorProfileProvider).value;
+    final canSeeAllTags = profile?.canSeeAllTags ?? false;
+
     List<Hotspot> hotspots = [];
     final distanceCalc = const latlong.Distance();
     
@@ -263,6 +268,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     List<Map<String, dynamic>> visibleData = [];
     
     for (var building in buildings) {
+      if (!canSeeAllTags && building.collectedCount == 0) continue;
+
       double dist = distanceCalc(
         latlong.LatLng(currentNode.lat, currentNode.lon),
         latlong.LatLng(building.lat, building.lng),
@@ -276,8 +283,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         latlong.LatLng(building.lat, building.lng),
       );
       
-      // heading is already in degrees
-      double headingDegrees = currentNode.heading;
+      double headingDegrees = currentNode.heading * (180.0 / math.pi);
       double relativeYaw = bearing - headingDegrees;
       relativeYaw = (relativeYaw + 540) % 360 - 180;
       
@@ -337,9 +343,6 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         double pitchRad = math.atan2(heightAboveCamera, dist == 0 ? 0.1 : dist);
         double pitchDeg = pitchRad * (180.0 / math.pi);
         
-        // Clamp pitch to avoid extreme distortion at the poles (which makes tags look tiny/shrunk)
-        pitchDeg = pitchDeg.clamp(-25.0, 25.0);
-        
         hotspots.add(
           Hotspot(
             latitude: pitchDeg, // Dynamically set vertical height based on distance!
@@ -357,7 +360,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isFullyCollected ? Colors.green.withOpacity(0.9) : (hasCollections ? Colors.orange.withOpacity(0.9) : Colors.red.withOpacity(0.9)),
+                      color: isFullyCollected ? AppColors.green.withOpacity(0.9) : (hasCollections ? AppColors.amber.withOpacity(0.9) : AppColors.crimson.withOpacity(0.9)),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.white, width: 2),
                       boxShadow: [
@@ -369,7 +372,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                       children: [
                         Text(
                           building.name,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                           textAlign: TextAlign.center,
                           maxLines: 2, // Allow name to wrap
                           overflow: TextOverflow.ellipsis,
@@ -379,7 +382,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                             padding: const EdgeInsets.only(top: 2),
                             child: Text(
                               '₹${building.totalCollected.toStringAsFixed(0)}',
-                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                              style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                           ),
                       ],
@@ -387,7 +390,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                   ),
                   Icon(
                     Icons.arrow_drop_down,
-                    color: isFullyCollected ? Colors.green : (hasCollections ? Colors.orange : Colors.red),
+                    color: isFullyCollected ? AppColors.green : (hasCollections ? AppColors.amber : AppColors.crimson),
                     size: 30,
                     shadows: [
                       Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
@@ -495,10 +498,18 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                 _cameraLongitude.value = longitude;
               },
               onLongPressStart: (longitude, latitude, tilt) {
+                final profile = ref.read(collectorProfileProvider).value;
+                if (profile == null || !profile.canCreate) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('You do not have permission to create tags.')),
+                  );
+                  return;
+                }
+                
                 if (currentNode == null) return;
                 
-                // heading is already in degrees
-                double headingDegrees = currentNode.heading;
+                // Convert heading from radians to degrees
+                double headingDegrees = currentNode.heading * (180.0 / math.pi);
                 
                 // Absolute bearing of the tap
                 double absoluteBearing = headingDegrees + longitude;
@@ -563,8 +574,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                               latlong.LatLng(neighborNode.lat, neighborNode.lon),
                             );
                             
-                            // heading is already in degrees
-                            double headingDegrees = currentNode.heading;
+                            // Convert heading from radians to degrees
+                            double headingDegrees = currentNode.heading * (180.0 / math.pi);
                             
                             // Calculate base yaw (where the node is when camera looks straight)
                             double baseYaw = bearing - headingDegrees;
@@ -587,7 +598,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                                   // Increase hit area slightly
                                   padding: const EdgeInsets.all(10),
                                   child: const Icon(
-                                    Icons.keyboard_arrow_up_rounded,
+                                    LucideIcons.chevronUp,
                                     size: 100,
                                     color: Colors.white,
                                     shadows: [
@@ -624,7 +635,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                   children: [
                     Text(
                       currentNode.address,
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -671,16 +682,16 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                             markers: buildings.map((building) {
                               Color pinColor;
                               if (building.collectedCount == 0) {
-                                pinColor = Colors.red;
+                                pinColor = AppColors.crimson;
                               } else if (building.collectedCount >= building.totalUnits) {
-                                pinColor = Colors.green;
+                                pinColor = AppColors.green;
                               } else {
-                                pinColor = Colors.orange;
+                                pinColor = AppColors.amber;
                               }
                               return Marker(
                                 point: latlong.LatLng(building.lat, building.lng),
-                                width: 24,
-                                height: 24,
+                                width: 40,
+                                height: 40,
                                 child: Icon(Icons.location_on, color: pinColor, size: 24),
                               );
                             }).toList(),
@@ -694,8 +705,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                                 child: ValueListenableBuilder<double>(
                                   valueListenable: _cameraLongitude,
                                   builder: (context, cameraLon, child) {
-                                    // heading is already in degrees
-                                    double headingDegrees = currentNode.heading;
+                                    double headingDegrees = currentNode.heading * (180.0 / math.pi);
                                     double absoluteBearing = headingDegrees + cameraLon;
                                     double angleRad = absoluteBearing * (math.pi / 180.0);
                                     
@@ -756,17 +766,17 @@ class FieldOfViewPainter extends CustomPainter {
     final fillPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          Colors.blueAccent.withOpacity(0.95),
-          Colors.blueAccent.withOpacity(0.6),
+          Colors.blue.withOpacity(0.9),
+          Colors.blue.withOpacity(0.3),
         ],
-        stops: const [0.4, 1.0],
+        stops: const [0.3, 1.0],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
 
     // Subtle border to make it pop against the map
     final strokePaint = Paint()
-      ..color = Colors.white.withOpacity(0.9)
+      ..color = Colors.blue.withOpacity(0.8)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.0;
 
     final path = Path();
     path.moveTo(center.dx, center.dy);

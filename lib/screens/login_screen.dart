@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../providers/auth_provider.dart';
+import '../main.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -10,53 +13,21 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-  
   bool _isLoading = false;
-  bool _isLogin = true;
-  String? _errorMessage;
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-
+  Future<void> _signInWithGoogle() async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
       final authService = ref.read(authServiceProvider);
-      if (_isLogin) {
-        await authService.signIn(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
-      } else {
-        await authService.signUp(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-          _nameController.text.trim(),
-        );
-      }
+      await authService.signInWithGoogle();
       // Success is handled by the router listening to authStateChanges
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('\${_isLogin ? "Login" : "Sign up"} failed: \${_errorMessage ?? "Unknown error"}')),
+          SnackBar(content: Text('Google Sign-In failed: $e')),
         );
       }
     } finally {
@@ -71,95 +42,113 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isLogin ? 'Login' : 'Sign Up'),
-      ),
+      backgroundColor: AppColors.bgBase,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(32.0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(Icons.maps_home_work, size: 80, color: Colors.deepOrange),
-                  const SizedBox(height: 24),
-                  Text(
-                    _isLogin ? 'Team Login' : 'Join Team',
-                    style: Theme.of(context).textTheme.headlineMedium,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Logo / Icon
+                Center(
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.bgCard,
+                      border: Border.all(color: AppColors.borderLight),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.accent.withOpacity(0.2),
+                          blurRadius: 30,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(LucideIcons.map, size: 48, color: AppColors.accent),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                
+                // Title
+                ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [AppColors.accent, AppColors.accentLight],
+                  ).createShader(bounds),
+                  child: Text(
+                    'Ganesha Tracker',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1,
+                      color: Colors.white,
+                    ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 32),
-                  if (!_isLogin) ...[
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Full Name',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.person),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your name';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.email),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      return null;
-                    },
+                ),
+                const SizedBox(height: 16),
+                
+                // Subtitle
+                Text(
+                  'Sign in to access your dashboard and manage street view collections.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    color: AppColors.textSecondary,
+                    height: 1.5,
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.lock),
-                    ),
-                    obscureText: true,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  if (_isLoading)
-                    const Center(child: CircularProgressIndicator())
-                  else ...[
-                    ElevatedButton(
-                      onPressed: _submit,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 48),
+                
+                // Action Button
+                if (_isLoading)
+                  const Center(child: CircularProgressIndicator(color: AppColors.accent))
+                else
+                  SizedBox(
+                    height: 54,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.accent, AppColors.accentLight],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.accent.withOpacity(0.35),
+                            blurRadius: 20,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: Text(_isLogin ? 'LOGIN' : 'SIGN UP', style: const TextStyle(fontSize: 16)),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: _signInWithGoogle,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(LucideIcons.logIn, color: Colors.white, size: 20),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Sign in with Google',
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () => setState(() => _isLogin = !_isLogin),
-                      child: Text(_isLogin ? 'Need an account? Sign up' : 'Already have an account? Login'),
-                    ),
-                  ],
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
         ),

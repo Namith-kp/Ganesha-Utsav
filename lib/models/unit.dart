@@ -9,6 +9,7 @@ class Unit {
   final String? collectedBy;
   final DateTime? collectedAt;
   final String? photoBase64;
+  final String? paymentMethod;
   final DateTime? updatedAt;
 
   Unit({
@@ -20,6 +21,7 @@ class Unit {
     this.collectedBy,
     this.collectedAt,
     this.photoBase64,
+    this.paymentMethod,
     this.updatedAt,
   });
 
@@ -33,6 +35,7 @@ class Unit {
       collectedBy: map['collectedBy'] as String?,
       collectedAt: (map['collectedAt'] as Timestamp?)?.toDate(),
       photoBase64: map['photoBase64'] as String?,
+      paymentMethod: map['paymentMethod'] as String?,
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -46,6 +49,7 @@ class Unit {
       if (collectedBy != null) 'collectedBy': collectedBy,
       if (collectedAt != null) 'collectedAt': Timestamp.fromDate(collectedAt!),
       if (photoBase64 != null) 'photoBase64': photoBase64,
+      if (paymentMethod != null) 'paymentMethod': paymentMethod,
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
     };
   }

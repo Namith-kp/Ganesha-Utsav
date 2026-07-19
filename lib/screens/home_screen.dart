@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../providers/auth_provider.dart';
 import '../providers/map_provider.dart';
 import '../models/building.dart';
@@ -37,8 +38,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final liveLocationAsync = ref.watch(liveLocationProvider);
     final buildingsAsync = ref.watch(buildingsProvider);
     final collectorAsync = ref.watch(collectorProfileProvider);
-    final isAdmin = collectorAsync.value?.role == 'admin';
-    final buildingToMove = ref.watch(moveBuildingProvider);
+    final profile = collectorAsync.value;
+    final isAdmin = profile?.isAdmin ?? false;
+    final canAccessReports = profile?.canAccessReports ?? false;
+    final canAccessAR = profile?.canAccessAR ?? false;
+    final canCreate = profile?.canCreate ?? false;
+    final canSeeAllTags = profile?.canSeeAllTags ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -52,14 +57,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(width: 8),
             ShaderMask(
               shaderCallback: (bounds) => const LinearGradient(
-                colors: [AppColors.gold, AppColors.saffron],
+                colors: [AppColors.accent, AppColors.accentLight],
               ).createShader(bounds),
               child: Text(
                 'Ganesha Tracker',
-                style: GoogleFonts.outfit(
+                style: GoogleFonts.plusJakartaSans(
                   color: Colors.white,
                   fontWeight: FontWeight.w700,
-                  fontSize: 17,
+                  fontSize: 18,
+                  letterSpacing: -0.5,
                 ),
               ),
             ),
@@ -68,114 +74,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         actions: [
           if (isAdmin)
             _NavIconButton(
-              icon: Icons.admin_panel_settings,
+              icon: LucideIcons.shieldAlert,
               tooltip: 'Admin Dashboard',
-              color: AppColors.gold,
+              color: AppColors.accent,
               onPressed: () => context.push('/admin'),
             ),
-          _NavIconButton(
-            icon: Icons.bar_chart,
-            tooltip: 'Reports',
-            onPressed: () => context.push('/reports'),
-          ),
+          if (canAccessReports)
+            _NavIconButton(
+              icon: LucideIcons.barChart2,
+              tooltip: 'Reports',
+              onPressed: () => context.push('/reports'),
+            ),
 
+          if (canAccessAR)
+            _NavIconButton(
+              icon: LucideIcons.box,
+              tooltip: 'AR Street View',
+              onPressed: () => context.push('/ar'),
+            ),
           _NavIconButton(
-            icon: Icons.view_in_ar,
-            tooltip: 'AR Street View',
-            onPressed: () => context.push('/ar'),
-          ),
-          _NavIconButton(
-            icon: Icons.logout,
+            icon: LucideIcons.logOut,
             tooltip: 'Logout',
             onPressed: () async => await authService.signOut(),
           ),
         ],
       ),
-      floatingActionButton: buildingToMove != null 
-        ? Padding(
-            padding: const EdgeInsets.only(left: 30.0), // Adjust for FAB padding
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                FloatingActionButton.extended(
-                  heroTag: 'cancelMoveBtn',
-                  backgroundColor: Colors.red,
-                  onPressed: () => ref.read(moveBuildingProvider.notifier).setState(null),
-                  label: const Text('Cancel', style: TextStyle(color: Colors.white)),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-                FloatingActionButton.extended(
-                  heroTag: 'confirmMoveBtn',
-                  backgroundColor: Colors.green,
-                  onPressed: () async {
-                    final center = _mapController.camera.center;
-                    await ref.read(buildingServiceProvider).updateBuildingLocation(
-                      buildingToMove.id, 
-                      center.latitude, 
-                      center.longitude
-                    );
-                    ref.read(moveBuildingProvider.notifier).setState(null);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tag relocated successfully!')));
-                    }
-                  },
-                  label: const Text('Confirm Relocation', style: TextStyle(color: Colors.white)),
-                  icon: const Icon(Icons.check, color: Colors.white),
-                ),
-              ],
-            ),
-          )
-        : Column(
+      floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FloatingActionButton.extended(
-            heroTag: 'tagHereBtn',
-            backgroundColor: AppColors.saffron,
-            onPressed: () {
-              final pos = ref.read(liveLocationProvider).value;
-              if (pos != null) {
-                if (pos.accuracy > 20.0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('GPS accuracy is poor (${pos.accuracy.toStringAsFixed(1)}m). Please wait for a better signal.')),
-                  );
-                  return;
-                }
-                showCreateBuildingDialog(context, ref, LatLng(pos.latitude, pos.longitude));
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Waiting for location...')),
-                );
-              }
-            },
-            icon: const Icon(Icons.add_location_alt, color: Colors.white),
-            label: const Text('Tag Here', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            heroTag: 'streetViewBtn',
-            backgroundColor: Colors.indigo,
-            onPressed: () {
-              final pos = ref.read(liveLocationProvider).value;
-              if (pos != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => StreetViewScreen(
-                      lat: pos.latitude,
-                      lon: pos.longitude,
+          if (canAccessAR)
+            FloatingActionButton(
+              heroTag: 'streetViewBtn',
+              backgroundColor: AppColors.accent,
+              onPressed: () {
+                final pos = ref.read(liveLocationProvider).value;
+                if (pos != null) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StreetViewScreen(
+                        lat: pos.latitude,
+                        lon: pos.longitude,
+                      ),
                     ),
-                  ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Waiting for location...')),
-                );
-              }
-            },
-            child: const Icon(Icons.streetview, color: Colors.white),
-          ),
-          const SizedBox(height: 16),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Waiting for location...')),
+                  );
+                }
+              },
+              child: const Icon(LucideIcons.map, color: Colors.white),
+            ),
+          if (canAccessAR)
+            const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'myLocationBtn',
+            backgroundColor: AppColors.bgCard,
+            foregroundColor: AppColors.textPrimary,
             onPressed: () {
               final pos = ref.read(liveLocationProvider).value;
               if (pos != null) {
@@ -185,7 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 );
               }
             },
-            child: const Icon(Icons.my_location),
+            child: const Icon(LucideIcons.navigation),
           ),
         ],
       ),
@@ -205,7 +160,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   initialCenter: initialCenter,
                   initialZoom: 18.0, // Zoom in a bit more for building view
                   onTap: (tapPosition, point) {
-                    if (buildingToMove != null) return;
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => StreetViewScreen(
@@ -214,6 +168,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                     );
+                  },
+                  onLongPress: (tapPosition, point) {
+                    if (canCreate) {
+                      showCreateBuildingDialog(context, ref, point);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('You do not have permission to create tags.')),
+                      );
+                    }
                   },
                 ),
                 children: [
@@ -233,16 +196,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       data: (pos) => pos == null ? [] : [
                         Marker(
                           point: LatLng(pos.latitude, pos.longitude),
-                          width: 30,
-                          height: 30,
+                          width: 32,
+                          height: 32,
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.blue,
+                              color: AppColors.accent,
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                              boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                              border: Border.all(color: AppColors.bgBase, width: 3),
+                              boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black54)],
                             ),
-                            child: const Icon(Icons.person, color: Colors.white, size: 18),
+                            child: const Icon(LucideIcons.user, color: Colors.white, size: 18),
                           ),
                         ),
                       ],
@@ -259,21 +222,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildFilterChip('All', 'all', Colors.blue),
+                      _buildFilterChip('All', 'all', AppColors.accent),
                       const SizedBox(width: 8),
-                      _buildFilterChip('Not Collected', 'red', Colors.red),
+                      _buildFilterChip('Not Collected', 'red', AppColors.crimson),
                       const SizedBox(width: 8),
-                      _buildFilterChip('Pending', 'orange', Colors.orange),
+                      _buildFilterChip('Pending', 'orange', AppColors.amber),
                       const SizedBox(width: 8),
-                      _buildFilterChip('Completed', 'green', Colors.green),
+                      _buildFilterChip('Completed', 'green', AppColors.green),
                     ],
                   ),
                 ),
               ),
-              if (buildingToMove != null)
-                const Center(
-                  child: Icon(Icons.add, color: Colors.red, size: 40),
-                ),
             ],
           );
         },
@@ -286,14 +245,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildFilterChip(String label, String filterValue, Color color) {
     final isSelected = _selectedFilter == filterValue;
     return FilterChip(
-      label: Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontSize: 12)),
+      label: Text(label, style: GoogleFonts.plusJakartaSans(
+        color: isSelected ? Colors.white : AppColors.textSecondary, 
+        fontSize: 13,
+        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+      )),
       selected: isSelected,
       selectedColor: color,
-      backgroundColor: Colors.white.withOpacity(0.9),
+      backgroundColor: AppColors.bgCard.withOpacity(0.9),
       checkmarkColor: Colors.white,
+      showCheckmark: false,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: isSelected ? color : Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: isSelected ? color : AppColors.border, width: 1),
       ),
       onSelected: (bool selected) {
         setState(() {
@@ -304,7 +269,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   List<Marker> _buildMarkers(BuildContext context, WidgetRef ref, List<Building> buildings) {
+    final profile = ref.read(collectorProfileProvider).value;
+    final canSeeAllTags = profile?.canSeeAllTags ?? false;
+
     var filteredBuildings = buildings.where((building) {
+      if (!canSeeAllTags && building.collectedCount == 0) return false;
+      
       if (_selectedFilter == 'all') return true;
       if (_selectedFilter == 'red' && building.collectedCount == 0) return true;
       if (_selectedFilter == 'green' && building.collectedCount >= building.totalUnits) return true;
@@ -345,14 +315,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   child: Text(
                     '${building.collectedCount}/${building.totalUnits}',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.gold,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                 ),
-              Icon(Icons.location_on, color: pinColor, size: 40),
+              Icon(Icons.location_on, color: pinColor, size: 36),
             ],
           ),
         ),

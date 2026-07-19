@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -18,15 +19,24 @@ void _showAddUnitDialog(BuildContext context, WidgetRef ref, Building building) 
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Add New Unit'),
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+      title: Text('Add New Unit', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
       content: TextField(
         controller: controller,
-        decoration: const InputDecoration(labelText: 'Unit Name (e.g. Unit 3)'),
+        style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          labelText: 'Unit Name (e.g. Unit 3)',
+          labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+          enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+          focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+        ),
         autofocus: true,
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
         ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
           onPressed: () async {
             if (controller.text.trim().isNotEmpty) {
               final buildingService = ref.read(buildingServiceProvider);
@@ -37,7 +47,7 @@ void _showAddUnitDialog(BuildContext context, WidgetRef ref, Building building) 
               if (ctx.mounted) Navigator.pop(ctx);
             }
           },
-          child: const Text('ADD'),
+          child: Text('ADD', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
         ),
       ],
     ),
@@ -50,6 +60,8 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    backgroundColor: AppColors.bgBase,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
     builder: (ctx) {
       return StreamBuilder<List<Unit>>(
         stream: buildingService.streamUnits(building.id),
@@ -59,6 +71,10 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
           final units = snapshot.data!;
           if (units.isEmpty) return const Center(child: Text('No units found.'));
           
+          final profile = ref.read(collectorProfileProvider).value;
+          final isAdmin = profile?.isAdmin ?? false;
+          final canCreate = profile?.canCreate ?? false;
+
           if (building.totalUnits > 1) {
             return DraggableScrollableSheet(
               expand: false,
@@ -71,37 +87,32 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text('${building.name} - Units', style: Theme.of(context).textTheme.titleLarge),
+                            child: Text('${building.name} - Units', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.add_business, color: Colors.blue),
-                            tooltip: 'Add Unit',
-                            onPressed: () => _showAddUnitDialog(context, ref, building),
-                          ),
-                          if (ref.read(collectorProfileProvider).value?.role == 'admin') ...[
+                          if (isAdmin)
                             IconButton(
-                              icon: const Icon(Icons.my_location, color: Colors.orange),
-                              tooltip: 'Relocate Tag',
-                              onPressed: () {
-                                ref.read(moveBuildingProvider.notifier).setState(building);
-                                if (context.mounted) Navigator.pop(context);
-                              },
+                              icon: const Icon(LucideIcons.plusCircle, color: AppColors.accent),
+                              tooltip: 'Add Unit',
+                              onPressed: () => _showAddUnitDialog(context, ref, building),
                             ),
+                          if (isAdmin)
                             IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
+                              icon: const Icon(LucideIcons.trash2, color: AppColors.crimson),
                               tooltip: 'Delete Building',
                               onPressed: () async {
                                 final confirm = await showDialog<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
-                                    title: const Text('Delete Building?'),
-                                    content: const Text('This will delete the building and all its units forever.'),
+                                    backgroundColor: AppColors.bgCard,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+                                    title: Text('Delete Building?', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                                    content: Text('This will delete the building and all its units forever.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
                                     actions: [
-                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
                                       ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.crimson, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                                         onPressed: () => Navigator.pop(ctx, true),
-                                        child: const Text('DELETE', style: TextStyle(color: Colors.white)),
+                                        child: Text('DELETE', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
                                       ),
                                     ],
                                   ),
@@ -112,7 +123,6 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                                 }
                               },
                             ),
-                          ],
                         ],
                       ),
                     ),
@@ -130,39 +140,49 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                                   child: Text(unit.unitLabel,
                                     style: GoogleFonts.inter(color: AppColors.textPrimary)),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit, size: 16, color: Colors.grey),
-                                  onPressed: () {
-                                    final controller = TextEditingController(text: unit.unitLabel);
-                                    showDialog(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Rename Unit'),
-                                        content: TextField(
-                                          controller: controller,
-                                          decoration: const InputDecoration(labelText: 'Unit Name'),
-                                          autofocus: true,
-                                        ),
-                                        actions: [
-                                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
-                                          ElevatedButton(
-                                            onPressed: () async {
-                                              if (controller.text.trim().isNotEmpty) {
-                                                await buildingService.renameUnit(
-                                                  buildingId: building.id,
-                                                  unitId: unit.id,
-                                                  newName: controller.text.trim(),
-                                                );
-                                                if (ctx.mounted) Navigator.pop(ctx);
-                                              }
-                                            },
-                                            child: const Text('SAVE'),
+                                if (isAdmin)
+                                  IconButton(
+                                    icon: const Icon(LucideIcons.edit2, size: 16, color: AppColors.textSecondary),
+                                    onPressed: () {
+                                      final controller = TextEditingController(text: unit.unitLabel);
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          backgroundColor: AppColors.bgCard,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+                                          title: Text('Rename Unit', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                                          content: TextField(
+                                            controller: controller,
+                                            style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                                            decoration: InputDecoration(
+                                              labelText: 'Unit Name',
+                                              labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            autofocus: true,
                                           ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
+                                            ElevatedButton(
+                                              style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                              onPressed: () async {
+                                                if (controller.text.trim().isNotEmpty) {
+                                                  await buildingService.renameUnit(
+                                                    buildingId: building.id,
+                                                    unitId: unit.id,
+                                                    newName: controller.text.trim(),
+                                                  );
+                                                  if (ctx.mounted) Navigator.pop(ctx);
+                                                }
+                                              },
+                                              child: const Text('SAVE'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
                               ],
                             ),
                             trailing: Chip(
@@ -175,14 +195,16 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                                 ),
                               ),
                               backgroundColor: isCollected
-                                  ? AppColors.greenPin.withOpacity(0.2)
+                                  ? AppColors.greenPin.withValues(alpha: 0.2)
                                   : AppColors.bgGlass,
                               side: BorderSide(
                                 color: isCollected ? AppColors.greenPin : AppColors.borderLight,
                               ),
                             ),
                             onTap: () {
-                              showUnitAmountForm(context, ref, building, unit);
+                              if (canCreate || isCollected) {
+                                showUnitAmountForm(context, ref, building, unit);
+                              }
                             },
                           );
                         },
@@ -203,49 +225,47 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.add_business, color: Colors.blue),
-                        tooltip: 'Add Unit',
-                        onPressed: () => _showAddUnitDialog(context, ref, building),
-                      ),
-                      if (ref.read(collectorProfileProvider).value?.role == 'admin') ...[
+                      if (isAdmin)
                         IconButton(
-                          icon: const Icon(Icons.my_location, color: Colors.orange),
-                          tooltip: 'Relocate Tag',
+                          icon: const Icon(LucideIcons.plusCircle, color: AppColors.accent),
+                          tooltip: 'Add Unit',
                           onPressed: () {
-                            ref.read(moveBuildingProvider.notifier).setState(building);
-                            if (context.mounted) Navigator.pop(context);
+                            Navigator.pop(ctx);
+                            _showAddUnitDialog(context, ref, building);
                           },
                         ),
+                      if (isAdmin)
                         IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
+                          icon: const Icon(LucideIcons.trash2, color: AppColors.crimson),
                           tooltip: 'Delete Building',
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('Delete Building?'),
-                              content: const Text('This will delete the building and all its units forever.'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  child: const Text('DELETE', style: TextStyle(color: Colors.white)),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            await buildingService.deleteBuilding(building.id);
-                            if (context.mounted) Navigator.pop(context);
-                          }
-                        },
-                      ),
-                      ],
-                      ], // Closes children
-                  ), // Closes Row
-                  _buildAmountForm(context, ref, building, unit),
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx2) => AlertDialog(
+                                backgroundColor: AppColors.bgCard,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+                                title: Text('Delete Building?', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                                content: Text('This will delete the building and all its units forever.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx2, false), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.crimson, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                    onPressed: () => Navigator.pop(ctx2, true),
+                                    child: Text('DELETE', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              await buildingService.deleteBuilding(building.id);
+                              if (context.mounted) Navigator.pop(context);
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                  if (canCreate || unit.status == 'collected')
+                    _AmountFormWidget(building: building, unit: unit),
                 ],
               ),
             );
@@ -260,23 +280,53 @@ void showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, 
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    backgroundColor: AppColors.bgBase,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
     builder: (ctx) {
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: _buildAmountForm(ctx, ref, building, unit, fromReports: fromReports),
+        child: _AmountFormWidget(building: building, unit: unit, fromReports: fromReports),
       );
     },
   );
 }
 
-Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit, {bool fromReports = false}) {
-  final isAdmin = ref.read(collectorProfileProvider).value?.role == 'admin';
-  final isAlreadyCollected = unit.status == 'collected';
+class _AmountFormWidget extends ConsumerStatefulWidget {
+  final Building building;
+  final Unit unit;
+  final bool fromReports;
 
-  final amountController = TextEditingController(text: isAlreadyCollected ? unit.amount.toString() : '');
-  bool isSubmitting = false;
-  String? photoBase64 = unit.photoBase64;
+  const _AmountFormWidget({
+    required this.building,
+    required this.unit,
+    this.fromReports = false,
+  });
+
+  @override
+  ConsumerState<_AmountFormWidget> createState() => _AmountFormWidgetState();
+}
+
+class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
   bool isEditing = false;
+  late TextEditingController amountController;
+  bool isSubmitting = false;
+  String? photoBase64;
+  String paymentMethod = 'Cash';
+
+  @override
+  void initState() {
+    super.initState();
+    final isAlreadyCollected = widget.unit.status == 'collected';
+    amountController = TextEditingController(text: isAlreadyCollected ? widget.unit.amount.toString() : '');
+    photoBase64 = widget.unit.photoBase64;
+    paymentMethod = widget.unit.paymentMethod ?? 'Cash';
+  }
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    super.dispose();
+  }
 
   void showZoomableImage(BuildContext ctx, String base64String) {
     showDialog(
@@ -303,180 +353,14 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
     );
   }
 
-  return StatefulBuilder(
-    builder: (ctx, setState) {
-      if (isAlreadyCollected && (!isAdmin || (fromReports && !isEditing))) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.headlineSmall),
-                  if (isAdmin)
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                      onPressed: () {
-                        final controller = TextEditingController(text: unit.unitLabel);
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Rename Unit'),
-                            content: TextField(
-                              controller: controller,
-                              decoration: const InputDecoration(labelText: 'Unit Name'),
-                              autofocus: true,
-                            ),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
-                              ElevatedButton(
-                                onPressed: () async {
-                                  if (controller.text.trim().isNotEmpty) {
-                                    final buildingService = ref.read(buildingServiceProvider);
-                                    await buildingService.renameUnit(
-                                      buildingId: building.id,
-                                      unitId: unit.id,
-                                      newName: controller.text.trim(),
-                                    );
-                                    if (ctx.mounted) Navigator.pop(ctx);
-                                    if (context.mounted) Navigator.pop(context);
-                                  }
-                                },
-                                child: const Text('SAVE'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (unit.photoBase64 != null) ...[
-                GestureDetector(
-                  onTap: () => showZoomableImage(context, unit.photoBase64!),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.memory(
-                      base64Decode(unit.photoBase64!),
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              const Icon(Icons.check_circle, color: Colors.green, size: 64),
-              const SizedBox(height: 16),
-              Text('Amount Collected: ₹${unit.amount}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              if (unit.collectedBy != null && unit.collectedBy!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance.collection('collectors').doc(unit.collectedBy).get(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData || !snapshot.data!.exists) {
-                      return const Text('Collected By: Unknown', style: TextStyle(fontSize: 14));
-                    }
-                    final collectorData = snapshot.data!.data() as Map<String, dynamic>;
-                    final collectorName = collectorData['name'] ?? 'Unknown';
-                    return Text('Collected By: $collectorName', style: const TextStyle(fontSize: 14));
-                  }
-                ),
-              ],
-              if (unit.collectedAt != null) ...[
-                const SizedBox(height: 4),
-                Text('Date: ${unit.collectedAt!.toLocal().toString().split(' ')[0]}', style: const TextStyle(fontSize: 14)),
-                const SizedBox(height: 4),
-                Text('Time: ${unit.collectedAt!.toLocal().toString().split(' ')[1].split('.')[0]}', style: const TextStyle(fontSize: 14)),
-              ],
-              const SizedBox(height: 16),
-              if (fromReports) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.map, color: Colors.white, size: 18),
-                      label: const Text('2D Map', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => HomeScreen(initialLat: building.lat, initialLng: building.lng)
-                          ),
-                        );
-                      },
-                    ),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.streetview, color: Colors.white, size: 18),
-                      label: const Text('Street View', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => StreetViewScreen(lat: building.lat, lon: building.lng)
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-              const SizedBox(height: 8),
-              if (!isAdmin)
-                const Text('Only admins can edit collected units.', style: TextStyle(color: Colors.grey))
-              else
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.edit, color: Colors.white),
-                      label: const Text('EDIT', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                      onPressed: () => setState(() => isEditing = true),
-                    ),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                      label: const Text('RESET', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Reset Collection?'),
-                            content: const Text('This will reset the amount to 0 and mark the unit as pending.'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('RESET'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          final buildingService = ref.read(buildingServiceProvider);
-                          await buildingService.resetUnitCollection(
-                            buildingId: building.id,
-                            unitId: unit.id,
-                            previousAmount: unit.amount,
-                          );
-                          if (context.mounted) Navigator.pop(context);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        );
-      }
-      
+  @override
+  Widget build(BuildContext context) {
+    final profile = ref.read(collectorProfileProvider).value;
+    final isAdmin = profile?.isAdmin ?? false;
+    final canCreate = profile?.canCreate ?? false;
+    final isAlreadyCollected = widget.unit.status == 'collected';
+
+    if (isAlreadyCollected && !isEditing) {
       return Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -485,154 +369,406 @@ Widget _buildAmountForm(BuildContext context, WidgetRef ref, Building building, 
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: Text('Collect for: ${building.name} - ${unit.unitLabel}', style: Theme.of(context).textTheme.titleLarge),
+                Text(' - ', style: Theme.of(context).textTheme.headlineSmall),
+                if (isAdmin)
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                    onPressed: () {
+                      final controller = TextEditingController(text: widget.unit.unitLabel);
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Rename Unit'),
+                          content: TextField(
+                            controller: controller,
+                            decoration: const InputDecoration(labelText: 'Unit Name'),
+                            autofocus: true,
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+                            ElevatedButton(
+                              onPressed: () async {
+                                if (controller.text.trim().isNotEmpty) {
+                                  final buildingService = ref.read(buildingServiceProvider);
+                                  await buildingService.renameUnit(
+                                    buildingId: widget.building.id,
+                                    unitId: widget.unit.id,
+                                    newName: controller.text.trim(),
+                                  );
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  if (context.mounted) Navigator.pop(context);
+                                }
+                              },
+                              child: const Text('SAVE'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (widget.unit.photoBase64 != null) ...[
+              GestureDetector(
+                onTap: () => showZoomableImage(context, widget.unit.photoBase64!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    base64Decode(widget.unit.photoBase64!),
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            const Icon(LucideIcons.checkCircle2, color: AppColors.greenPin, size: 64),
+            const SizedBox(height: 16),
+            Text('₹${widget.unit.amount}', style: GoogleFonts.plusJakartaSans(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            Builder(
+              builder: (context) {
+                final paymentMethod = widget.unit.paymentMethod ?? 'Cash';
+                final isUpi = paymentMethod == 'UPI';
+                final color = isUpi ? AppColors.purple : AppColors.amber;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: color.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(isUpi ? LucideIcons.smartphone : LucideIcons.banknote, size: 16, color: color),
+                      const SizedBox(width: 8),
+                      Text(paymentMethod, style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+                    ],
+                  ),
+                );
+              }
+            ),
+            if (widget.unit.collectedBy != null && widget.unit.collectedBy!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('collectors').doc(widget.unit.collectedBy).get(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData || !snapshot.data!.exists) {
+                    return Text('Collected By: Unknown', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14));
+                  }
+                  final collectorData = snapshot.data!.data() as Map<String, dynamic>;
+                  final collectorName = collectorData['name'] ?? 'Unknown';
+                  return Text('Collected by $collectorName', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14));
+                }
+              ),
+            ],
+            if (widget.unit.collectedAt != null) ...[
+              const SizedBox(height: 4),
+              Text('${widget.unit.collectedAt!.toLocal().toString().split(' ')[0]} at ${widget.unit.collectedAt!.toLocal().toString().split(' ')[1].split('.')[0]}', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14)),
+            ],
+            const SizedBox(height: 16),
+            if (widget.fromReports) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    icon: const Icon(LucideIcons.map, color: Colors.white, size: 18),
+                    label: Text('2D Map', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => HomeScreen(initialLat: widget.building.lat, initialLng: widget.building.lng)
+                        ),
+                      );
+                    },
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(LucideIcons.image, color: Colors.white, size: 18),
+                    label: Text('Street View', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.purple, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => StreetViewScreen(lat: widget.building.lat, lon: widget.building.lng)
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+            const SizedBox(height: 8),
+            if (!isAdmin)
+              Text('Only admins can edit collected units.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(LucideIcons.edit2, color: AppColors.accent, size: 18),
+                      label: Text('Edit', style: GoogleFonts.plusJakartaSans(color: AppColors.accent, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: AppColors.accent.withValues(alpha: 0.5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => setState(() => isEditing = true),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(LucideIcons.rotateCcw, color: AppColors.amber, size: 18),
+                      label: Text('Reset', style: GoogleFonts.plusJakartaSans(color: AppColors.amber, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: AppColors.amber.withValues(alpha: 0.5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: AppColors.bgCard,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+                          title: Text('Reset Collection?', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                          content: Text('This will reset the amount to 0 and mark the unit as pending.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.amber, 
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: Text('Reset', style: GoogleFonts.plusJakartaSans(color: Colors.black, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        final buildingService = ref.read(buildingServiceProvider);
+                        await buildingService.resetUnitCollection(
+                          buildingId: widget.building.id,
+                          unitId: widget.unit.id,
+                          previousAmount: widget.unit.amount,
+                        );
+                        if (context.mounted) Navigator.pop(context);
+                      }
+                    },
+                  ),
+                ),
+              ],
+              ),
+          ],
+        ),
+      );
+    }
+    
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text('Collect for: ' + widget.building.name + ' - ' + widget.unit.unitLabel, style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+              ),
+              if (isAdmin)
                 IconButton(
-                  icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                  icon: const Icon(LucideIcons.edit2, size: 20, color: AppColors.textSecondary),
                   onPressed: () {
-                    final controller = TextEditingController(text: unit.unitLabel);
+                    final controller = TextEditingController(text: widget.unit.unitLabel);
                     showDialog(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('Rename Unit'),
+                        backgroundColor: AppColors.bgCard,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+                        title: Text('Rename Unit', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
                         content: TextField(
                           controller: controller,
-                          decoration: const InputDecoration(labelText: 'Unit Name'),
+                          style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                          decoration: InputDecoration(
+                            labelText: 'Unit Name',
+                            labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                            enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                            focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                          ),
                           autofocus: true,
                         ),
                         actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
                           ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                             onPressed: () async {
                               if (controller.text.trim().isNotEmpty) {
                                 final buildingService = ref.read(buildingServiceProvider);
                                 await buildingService.renameUnit(
-                                  buildingId: building.id,
-                                  unitId: unit.id,
+                                  buildingId: widget.building.id,
+                                  unitId: widget.unit.id,
                                   newName: controller.text.trim(),
                                 );
                                 if (ctx.mounted) Navigator.pop(ctx);
                                 if (context.mounted) Navigator.pop(context);
                               }
                             },
-                            child: const Text('SAVE'),
+                            child: Text('SAVE', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
                     );
                   },
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (photoBase64 != null) ...[
-              Stack(
-                alignment: Alignment.topRight,
-                children: [
-                  GestureDetector(
-                    onTap: () => showZoomableImage(context, photoBase64!),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        base64Decode(photoBase64!),
-                        height: 150,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => setState(() => photoBase64 = null),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
             ],
-            Row(
+          ),
+          const SizedBox(height: 16),
+          if (!canCreate) ...[
+            const Icon(LucideIcons.clock, size: 64, color: AppColors.amber),
+            const SizedBox(height: 16),
+            Text('Pending Collection', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            const SizedBox(height: 8),
+            Text('You do not have permission to collect funds.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14)),
+          ] else ...[
+          if (photoBase64 != null) ...[
+            Stack(
+              alignment: Alignment.topRight,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: amountController,
-                    keyboardType: TextInputType.number,
-                    autofocus: photoBase64 != null,
-                    enabled: photoBase64 != null,
-                    decoration: InputDecoration(
-                      labelText: photoBase64 == null ? 'Capture image first' : 'Amount (₹)',
-                      border: const OutlineInputBorder(),
+                GestureDetector(
+                  onTap: () => showZoomableImage(context, photoBase64!),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      base64Decode(photoBase64!),
+                      height: 150,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.camera_alt, size: 32, color: Colors.blue),
-                  onPressed: () async {
-                    final picker = ImagePicker();
-                    final image = await picker.pickImage(
-                      source: ImageSource.camera,
-                      imageQuality: 30, // heavy compression
-                      maxWidth: 600,
-                    );
-                    if (image != null) {
-                      final bytes = await image.readAsBytes();
-                      setState(() {
-                        photoBase64 = base64Encode(bytes);
-                      });
-                    }
-                  },
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => setState(() => photoBase64 = null),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: (isSubmitting || photoBase64 == null) ? null : () async {
-                  final amount = double.tryParse(amountController.text) ?? 0.0;
-                  if (amount <= 0 && unit.status != 'collected') return;
-
-                  final authUser = ref.read(authStateProvider).value;
-                  if (authUser == null) return;
-
-                  setState(() => isSubmitting = true);
-                  
-                  try {
-                    final buildingService = ref.read(buildingServiceProvider);
-                    
-                    if (amount == 0 && unit.status == 'collected') {
-                      await buildingService.resetUnitCollection(
-                        buildingId: building.id,
-                        unitId: unit.id,
-                        previousAmount: unit.amount,
-                      );
-                    } else {
-                      await buildingService.markUnitCollected(
-                        buildingId: building.id,
-                        unitId: unit.id,
-                        amount: amount,
-                        collectedBy: authUser.uid,
-                        photoBase64: photoBase64,
-                      );
-                    }
-                    if (ctx.mounted) Navigator.of(ctx).pop();
-                  } catch (e) {
-                     setState(() => isSubmitting = false);
-                     if (ctx.mounted) {
-                       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Error: $e')));
-                     }
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: amountController,
+                  keyboardType: TextInputType.number,
+                  autofocus: photoBase64 != null,
+                  enabled: photoBase64 != null,
+                  style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: photoBase64 == null ? 'Capture image first' : 'Amount (₹)',
+                    labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                    focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                    disabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                dropdownColor: AppColors.bgCard,
+                value: paymentMethod,
+                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                items: ['Cash', 'UPI'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                onChanged: photoBase64 == null ? null : (val) {
+                  if (val != null) setState(() => paymentMethod = val);
+                },
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(LucideIcons.camera, size: 32, color: AppColors.accent),
+                onPressed: () async {
+                  final picker = ImagePicker();
+                  final image = await picker.pickImage(
+                    source: ImageSource.camera,
+                    imageQuality: 30,
+                    maxWidth: 600,
+                  );
+                  if (image != null) {
+                    final bytes = await image.readAsBytes();
+                    setState(() {
+                      photoBase64 = base64Encode(bytes);
+                    });
                   }
                 },
-                child: isSubmitting 
-                    ? const CircularProgressIndicator()
-                    : Text(isAlreadyCollected ? 'UPDATE AMOUNT' : 'MARK COLLECTED'),
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: (isSubmitting || photoBase64 == null) ? null : () async {
+                final amount = double.tryParse(amountController.text) ?? 0.0;
+                if (amount <= 0 && widget.unit.status != 'collected') return;
+
+                final authUser = ref.read(authStateProvider).value;
+                if (authUser == null) return;
+
+                setState(() => isSubmitting = true);
+                
+                try {
+                  final buildingService = ref.read(buildingServiceProvider);
+                  
+                  if (amount == 0 && widget.unit.status == 'collected') {
+                    await buildingService.resetUnitCollection(
+                      buildingId: widget.building.id,
+                      unitId: widget.unit.id,
+                      previousAmount: widget.unit.amount,
+                    );
+                  } else {
+                    await buildingService.markUnitCollected(
+                      buildingId: widget.building.id,
+                      unitId: widget.unit.id,
+                      amount: amount,
+                      collectedBy: authUser.uid,
+                      photoBase64: photoBase64,
+                      paymentMethod: paymentMethod,
+                    );
+                  }
+                  if (context.mounted) Navigator.of(context).pop();
+                } catch (e) {
+                   setState(() => isSubmitting = false);
+                   if (context.mounted) {
+                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e', style: GoogleFonts.plusJakartaSans(color: Colors.white)), backgroundColor: AppColors.crimson));
+                   }
+                }
+              },
+              child: isSubmitting 
+                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(
+                      isAlreadyCollected ? 'UPDATE AMOUNT' : 'MARK COLLECTED',
+                      style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)
+                    ),
             ),
+          ),
           ],
-        ),
-      );
-    }
-  );
+        ],
+      ),
+    );
+  }
 }
 
 
@@ -648,18 +784,27 @@ void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLn
       return StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Add Building'),
+            backgroundColor: AppColors.bgCard,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+            title: Text('Add Building', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+                  style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Building Name / Landmark',
+                    labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                    focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 SwitchListTile(
-                  title: const Text('Multi-unit apartment'),
+                  title: Text('Multi-unit apartment', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary)),
                   value: isApartment,
+                  activeColor: AppColors.accent,
                   onChanged: (val) {
                     setState(() => isApartment = val);
                   },
@@ -669,7 +814,13 @@ void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLn
                   TextField(
                     controller: unitsController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Number of Units'),
+                    style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'Number of Units',
+                      labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                      focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ],
               ],
@@ -677,9 +828,10 @@ void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLn
             actions: [
               TextButton(
                 onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
-                child: const Text('CANCEL'),
+                child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 onPressed: isSubmitting ? null : () async {
                   if (nameController.text.trim().isEmpty) return;
 
@@ -722,8 +874,8 @@ void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLn
                   }
                 },
                 child: isSubmitting 
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('CREATE'),
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text('CREATE', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],
           );

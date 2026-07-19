@@ -4,7 +4,10 @@ import 'package:camera/camera.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../providers/map_provider.dart';
+import '../main.dart';
 
 class ARViewScreen extends ConsumerStatefulWidget {
   const ARViewScreen({super.key});
@@ -73,9 +76,14 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
   Widget build(BuildContext context) {
     if (kIsWeb) {
       return Scaffold(
-        appBar: AppBar(title: const Text('AR Street View')),
-        body: const Center(
-          child: Text('AR Street View is available only in the mobile app.'),
+        backgroundColor: AppColors.bgBase,
+        appBar: AppBar(
+          title: Text('AR Street View', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+          backgroundColor: AppColors.bgCard,
+          iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        ),
+        body: Center(
+          child: Text('AR Street View is available only in the mobile app.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
         ),
       );
     }
@@ -84,13 +92,13 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
     final buildingsAsync = ref.watch(buildingsProvider);
 
     return Scaffold(
+      backgroundColor: AppColors.bgBase,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('AR Street View'),
-        backgroundColor: Colors.transparent,
+        title: Text('AR Street View', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.black45,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20),
       ),
       body: Stack(
         children: [
@@ -100,18 +108,22 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
               child: CameraPreview(_cameraController!),
             )
           else
-            const Center(child: CircularProgressIndicator()),
+            const Center(child: CircularProgressIndicator(color: AppColors.accent)),
 
           // Compass Heading overlay for debugging/context
           Positioned(
             top: 100,
             left: 16,
             child: Container(
-              padding: const EdgeInsets.all(8),
-              color: Colors.black54,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white24),
+              ),
               child: Text(
                 'Heading: ${_heading.toStringAsFixed(1)}°',
-                style: const TextStyle(color: Colors.white),
+                style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -186,8 +198,8 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: building.collectedCount == building.totalUnits 
-                                  ? Colors.green.withValues(alpha: 0.9)
-                                  : Colors.blue.withValues(alpha: 0.9),
+                                  ? AppColors.green.withOpacity(0.9)
+                                  : AppColors.accent.withOpacity(0.9),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: Colors.white, width: 2),
                               boxShadow: const [
@@ -203,7 +215,7 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
                               children: [
                                 Text(
                                   building.name,
-                                  style: const TextStyle(
+                                  style: GoogleFonts.plusJakartaSans(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -214,7 +226,7 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
                                 const SizedBox(height: 4),
                                 Text(
                                   '${distance.toInt()}m',
-                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                  style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
                                 ),
                               ],
                             ),

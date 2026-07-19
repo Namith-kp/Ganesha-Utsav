@@ -10,6 +10,7 @@ import '../screens/admin_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
+  final collectorProfile = ref.watch(collectorProfileProvider);
 
   return GoRouter(
     initialLocation: '/',
@@ -26,6 +27,15 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       if (isLoggingIn) {
         return '/';
+      }
+
+      // Role-based guards
+      final profile = collectorProfile.value;
+      if (profile != null) {
+        final path = state.matchedLocation;
+        if (path == '/admin' && !profile.isAdmin) return '/';
+        if (path == '/reports' && !profile.canAccessReports) return '/';
+        if (path == '/ar' && !profile.canAccessAR) return '/';
       }
 
       return null;

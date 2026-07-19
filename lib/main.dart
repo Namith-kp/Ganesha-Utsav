@@ -8,28 +8,35 @@ import 'router/app_router.dart';
 
 // ─── Design Tokens (mirrors web-app/style.css) ────────────────────────────────
 class AppColors {
-  static const bgBase    = Color(0xFF0A0D14);
-  static const bgCard    = Color(0xFF12162B);
-  static const bgGlass   = Color(0xD012162B); // ~82% opacity
-  static const border    = Color(0x14FFFFFF); // ~8% white
-  static const borderLight = Color(0x24FFFFFF); // ~14% white
+  // Modern Zinc/Charcoal Palette
+  static const bgBase    = Color(0xFF09090B); // Zinc 950
+  static const bgCard    = Color(0xFF18181B); // Zinc 900
+  static const bgGlass   = Color(0xD018181B); 
+  static const border    = Color(0xFF27272A); // Zinc 800
+  static const borderLight = Color(0xFF3F3F46); // Zinc 700
 
-  static const textPrimary   = Color(0xFFF0F2FF);
-  static const textSecondary = Color(0xFF9AA0C0);
-  static const textMuted     = Color(0xFF5A618A);
+  static const textPrimary   = Color(0xFFFAFAFA); // Zinc 50
+  static const textSecondary = Color(0xFFA1A1AA); // Zinc 400
+  static const textMuted     = Color(0xFF71717A); // Zinc 500
 
-  static const gold    = Color(0xFFF5A623);
-  static const saffron = Color(0xFFFF6A00);
-  static const crimson = Color(0xFFE53935);
-  static const green   = Color(0xFF22C55E);
-  static const blue    = Color(0xFF6366F1);
-  static const purple  = Color(0xFFA855F7);
+  // Modern Accents
+  static const accent      = Color(0xFF6366F1); // Indigo 500
+  static const accentLight = Color(0xFF818CF8); // Indigo 400
+  
+  // Aliases for old colors to prevent immediate breakage during refactoring
+  static const gold    = accent;
+  static const saffron = accentLight;
+
+  static const crimson = Color(0xFFEF4444);
+  static const green   = Color(0xFF10B981);
+  static const blue    = Color(0xFF3B82F6);
+  static const purple  = Color(0xFF8B5CF6);
   static const amber   = Color(0xFFF59E0B);
 
   // Pin colours
   static const redPin    = Color(0xFFEF4444);
   static const yellowPin = Color(0xFFF59E0B);
-  static const greenPin  = Color(0xFF22C55E);
+  static const greenPin  = Color(0xFF10B981);
 }
 
 void main() async {
@@ -82,7 +89,7 @@ class MyApp extends ConsumerWidget {
   }
 
   ThemeData _buildDarkTheme() {
-    final base = GoogleFonts.interTextTheme(ThemeData.dark().textTheme).apply(
+    final base = GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme).apply(
       bodyColor: AppColors.textPrimary,
       displayColor: AppColors.textPrimary,
     );
@@ -93,20 +100,20 @@ class MyApp extends ConsumerWidget {
       scaffoldBackgroundColor: AppColors.bgBase,
       textTheme: base,
       colorScheme: const ColorScheme.dark(
-        primary: AppColors.gold,
-        secondary: AppColors.saffron,
+        primary: AppColors.accent,
+        secondary: AppColors.accentLight,
         surface: AppColors.bgCard,
         onSurface: AppColors.textPrimary,
         error: AppColors.crimson,
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: Color(0xF50A0D14), // ~96% opaque
+        backgroundColor: AppColors.bgBase.withOpacity(0.95),
         elevation: 0,
         scrolledUnderElevation: 0,
-        titleTextStyle: GoogleFonts.outfit(
+        titleTextStyle: GoogleFonts.plusJakartaSans(
           color: AppColors.textPrimary,
           fontSize: 18,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
         iconTheme: const IconThemeData(color: AppColors.textSecondary),
         systemOverlayStyle: const SystemUiOverlayStyle(
@@ -116,57 +123,61 @@ class MyApp extends ConsumerWidget {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.gold,
+          backgroundColor: AppColors.accent,
           foregroundColor: Colors.white,
-          textStyle: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 15),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 15),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(vertical: 16),
           elevation: 0,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0x10FFFFFF),
+        fillColor: AppColors.bgCard,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.borderLight),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.borderLight),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.gold, width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
         ),
         labelStyle: const TextStyle(color: AppColors.textSecondary),
         hintStyle: const TextStyle(color: AppColors.textMuted),
         prefixIconColor: AppColors.textMuted,
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.bgCard,
-        foregroundColor: AppColors.gold,
-        elevation: 8,
+        backgroundColor: AppColors.accent,
+        foregroundColor: Colors.white,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
       ),
       cardTheme: CardThemeData(
         color: AppColors.bgCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.border, width: 0.5),
         ),
       ),
-      dividerTheme: const DividerThemeData(color: AppColors.border),
+      dividerTheme: const DividerThemeData(color: AppColors.border, thickness: 0.5),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.bgCard,
-        contentTextStyle: GoogleFonts.inter(color: AppColors.textPrimary),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        contentTextStyle: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.border, width: 0.5),
+        ),
         behavior: SnackBarBehavior.floating,
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
     );

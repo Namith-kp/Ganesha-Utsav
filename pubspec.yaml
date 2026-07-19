@@ -55,10 +55,11 @@ dependencies:
   http: ^1.6.0
   flutter_google_street_view: ^3.1.4
   fl_chart: ^1.2.0
-  google_sign_in: ^7.2.0
+  google_sign_in: ^6.2.1
   google_fonts: ^6.2.1
   shared_preferences: ^2.3.2
   flutter_cache_manager: ^3.4.1
+  lucide_icons_flutter: ^3.1.15
 
 dev_dependencies:
   flutter_test:
