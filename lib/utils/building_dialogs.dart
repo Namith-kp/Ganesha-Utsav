@@ -144,37 +144,57 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
                                   IconButton(
                                     icon: const Icon(LucideIcons.edit2, size: 16, color: AppColors.textSecondary),
                                     onPressed: () {
-                                      final controller = TextEditingController(text: unit.unitLabel);
+                                      final unitController = TextEditingController(text: unit.unitLabel);
+                                      final buildingController = TextEditingController(text: building.name);
                                       showDialog(
                                         context: context,
                                         builder: (ctx) => AlertDialog(
                                           backgroundColor: AppColors.bgCard,
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
-                                          title: Text('Rename Unit', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-                                          content: TextField(
-                                            controller: controller,
-                                            style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
-                                            decoration: InputDecoration(
-                                              labelText: 'Unit Name',
-                                              labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
-                                              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
-                                              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
-                                            ),
-                                            autofocus: true,
+                                          title: Text('Rename Details', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              TextField(
+                                                controller: buildingController,
+                                                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                                                decoration: InputDecoration(
+                                                  labelText: 'Building Name',
+                                                  labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 16),
+                                              TextField(
+                                                controller: unitController,
+                                                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                                                decoration: InputDecoration(
+                                                  labelText: 'Unit Name',
+                                                  labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           actions: [
                                             TextButton(onPressed: () => Navigator.pop(ctx), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
                                             ElevatedButton(
                                               style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                                               onPressed: () async {
-                                                if (controller.text.trim().isNotEmpty) {
+                                                final buildingService = ref.read(buildingServiceProvider);
+                                                if (buildingController.text.trim().isNotEmpty && buildingController.text.trim() != building.name) {
+                                                  await buildingService.updateBuildingName(building.id, buildingController.text.trim());
+                                                }
+                                                if (unitController.text.trim().isNotEmpty && unitController.text.trim() != unit.unitLabel) {
                                                   await buildingService.renameUnit(
                                                     buildingId: building.id,
                                                     unitId: unit.id,
-                                                    newName: controller.text.trim(),
+                                                    newName: unitController.text.trim(),
                                                   );
-                                                  if (ctx.mounted) Navigator.pop(ctx);
                                                 }
+                                                if (ctx.mounted) Navigator.pop(ctx);
                                               },
                                               child: const Text('SAVE'),
                                             ),
@@ -311,7 +331,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
   late TextEditingController amountController;
   bool isSubmitting = false;
   String? photoBase64;
-  String paymentMethod = 'Cash';
+  String? paymentMethod;
 
   @override
   void initState() {
@@ -319,7 +339,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
     final isAlreadyCollected = widget.unit.status == 'collected';
     amountController = TextEditingController(text: isAlreadyCollected ? widget.unit.amount.toString() : '');
     photoBase64 = widget.unit.photoBase64;
-    paymentMethod = widget.unit.paymentMethod ?? 'Cash';
+    paymentMethod = widget.unit.paymentMethod;
   }
 
   @override
@@ -368,38 +388,69 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(' - ', style: Theme.of(context).textTheme.headlineSmall),
+                Flexible(
+                  child: Text('${widget.building.name} - ${widget.unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                ),
                 if (isAdmin)
                   IconButton(
-                    icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                    icon: const Icon(LucideIcons.edit2, size: 20, color: AppColors.textSecondary),
                     onPressed: () {
-                      final controller = TextEditingController(text: widget.unit.unitLabel);
+                      final unitController = TextEditingController(text: widget.unit.unitLabel);
+                      final buildingController = TextEditingController(text: widget.building.name);
                       showDialog(
                         context: context,
                         builder: (ctx) => AlertDialog(
-                          title: const Text('Rename Unit'),
-                          content: TextField(
-                            controller: controller,
-                            decoration: const InputDecoration(labelText: 'Unit Name'),
-                            autofocus: true,
+                          backgroundColor: AppColors.bgCard,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
+                          title: Text('Rename Details', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextField(
+                                controller: buildingController,
+                                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                                decoration: InputDecoration(
+                                  labelText: 'Building Name',
+                                  labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: unitController,
+                                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                                decoration: InputDecoration(
+                                  labelText: 'Unit Name',
+                                  labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
                           ),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+                            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
                             ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                               onPressed: () async {
-                                if (controller.text.trim().isNotEmpty) {
-                                  final buildingService = ref.read(buildingServiceProvider);
+                                final buildingService = ref.read(buildingServiceProvider);
+                                if (buildingController.text.trim().isNotEmpty && buildingController.text.trim() != widget.building.name) {
+                                  await buildingService.updateBuildingName(widget.building.id, buildingController.text.trim());
+                                }
+                                if (unitController.text.trim().isNotEmpty && unitController.text.trim() != widget.unit.unitLabel) {
                                   await buildingService.renameUnit(
                                     buildingId: widget.building.id,
                                     unitId: widget.unit.id,
-                                    newName: controller.text.trim(),
+                                    newName: unitController.text.trim(),
                                   );
-                                  if (ctx.mounted) Navigator.pop(ctx);
-                                  if (context.mounted) Navigator.pop(context);
                                 }
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) Navigator.pop(context);
                               },
-                              child: const Text('SAVE'),
+                              child: Text('Save', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ),
@@ -479,10 +530,14 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                     label: Text('2D Map', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                     onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pushReplacement(
+                      Navigator.of(context).pop(); // close bottom sheet
+                      Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => HomeScreen(initialLat: widget.building.lat, initialLng: widget.building.lng)
+                          builder: (_) => HomeScreen(
+                            initialLat: widget.building.lat, 
+                            initialLng: widget.building.lng,
+                            targetBuildingId: widget.building.id,
+                          )
                         ),
                       );
                     },
@@ -582,45 +637,64 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Expanded(
-                child: Text('Collect for: ' + widget.building.name + ' - ' + widget.unit.unitLabel, style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+                child: Text('Collect for: ${widget.building.name} - ${widget.unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
               ),
               if (isAdmin)
                 IconButton(
                   icon: const Icon(LucideIcons.edit2, size: 20, color: AppColors.textSecondary),
                   onPressed: () {
-                    final controller = TextEditingController(text: widget.unit.unitLabel);
+                    final unitController = TextEditingController(text: widget.unit.unitLabel);
+                    final buildingController = TextEditingController(text: widget.building.name);
                     showDialog(
                       context: context,
                       builder: (ctx) => AlertDialog(
                         backgroundColor: AppColors.bgCard,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.borderLight)),
-                        title: Text('Rename Unit', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-                        content: TextField(
-                          controller: controller,
-                          style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
-                          decoration: InputDecoration(
-                            labelText: 'Unit Name',
-                            labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
-                            enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
-                            focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
-                          ),
-                          autofocus: true,
+                        title: Text('Rename Details', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: buildingController,
+                              style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                              decoration: InputDecoration(
+                                labelText: 'Building Name',
+                                labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: unitController,
+                              style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+                              decoration: InputDecoration(
+                                labelText: 'Unit Name',
+                                labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+                                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+                                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ],
                         ),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(ctx), child: Text('CANCEL', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary))),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                             onPressed: () async {
-                              if (controller.text.trim().isNotEmpty) {
-                                final buildingService = ref.read(buildingServiceProvider);
+                              final buildingService = ref.read(buildingServiceProvider);
+                              if (buildingController.text.trim().isNotEmpty && buildingController.text.trim() != widget.building.name) {
+                                await buildingService.updateBuildingName(widget.building.id, buildingController.text.trim());
+                              }
+                              if (unitController.text.trim().isNotEmpty && unitController.text.trim() != widget.unit.unitLabel) {
                                 await buildingService.renameUnit(
                                   buildingId: widget.building.id,
                                   unitId: widget.unit.id,
-                                  newName: controller.text.trim(),
+                                  newName: unitController.text.trim(),
                                 );
-                                if (ctx.mounted) Navigator.pop(ctx);
-                                if (context.mounted) Navigator.pop(context);
                               }
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              if (context.mounted) Navigator.pop(context);
                             },
                             child: Text('SAVE', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
                           ),
@@ -685,6 +759,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
               DropdownButton<String>(
                 dropdownColor: AppColors.bgCard,
                 value: paymentMethod,
+                hint: Text('Method', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14)),
                 style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
                 items: ['Cash', 'UPI'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                 onChanged: photoBase64 == null ? null : (val) {
@@ -720,7 +795,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (isSubmitting || photoBase64 == null) ? null : () async {
+              onPressed: (isSubmitting || photoBase64 == null || paymentMethod == null) ? null : () async {
                 final amount = double.tryParse(amountController.text) ?? 0.0;
                 if (amount <= 0 && widget.unit.status != 'collected') return;
 
@@ -745,7 +820,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                       amount: amount,
                       collectedBy: authUser.uid,
                       photoBase64: photoBase64,
-                      paymentMethod: paymentMethod,
+                      paymentMethod: paymentMethod!,
                     );
                   }
                   if (context.mounted) Navigator.of(context).pop();
@@ -804,7 +879,7 @@ void showCreateBuildingDialog(BuildContext context, WidgetRef ref, latlong.LatLn
                 SwitchListTile(
                   title: Text('Multi-unit apartment', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary)),
                   value: isApartment,
-                  activeColor: AppColors.accent,
+                  activeThumbColor: AppColors.accent,
                   onChanged: (val) {
                     setState(() => isApartment = val);
                   },

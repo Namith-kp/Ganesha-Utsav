@@ -86,6 +86,24 @@ class AuthService {
     });
   }
 
+  // Update team fund status (Admin only)
+  Future<void> updateTeamFundStatus({
+    required String uid,
+    required String fundStatus,
+    double? fundAmount,
+    String? fundPaymentMethod,
+    String? fundCollectedBy,
+  }) async {
+    final updates = {
+      'fundStatus': fundStatus,
+      'fundAmount': fundAmount,
+      'fundPaymentMethod': fundPaymentMethod,
+      'fundCollectedAt': fundStatus == 'paid' ? FieldValue.serverTimestamp() : null,
+      'fundCollectedBy': fundCollectedBy,
+    };
+    await _firestore.collection('collectors').doc(uid).update(updates);
+  }
+
   // Sign out
   Future<void> signOut() async {
     await GoogleSignIn().signOut();

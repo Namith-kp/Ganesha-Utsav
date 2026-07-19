@@ -20,16 +20,42 @@ import '../utils/building_dialogs.dart';
 class HomeScreen extends ConsumerStatefulWidget {
   final double? initialLat;
   final double? initialLng;
+  final String? targetBuildingId;
 
-  const HomeScreen({Key? key, this.initialLat, this.initialLng}) : super(key: key);
+  const HomeScreen({Key? key, this.initialLat, this.initialLng, this.targetBuildingId}) : super(key: key);
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   String _selectedFilter = 'all';
+  bool _hasZoomedToTarget = false;
+
+  void _animatedMapMove(LatLng destLocation, double destZoom) {
+    final latTween = Tween<double>(begin: _mapController.camera.center.latitude, end: destLocation.latitude);
+    final lngTween = Tween<double>(begin: _mapController.camera.center.longitude, end: destLocation.longitude);
+    final zoomTween = Tween<double>(begin: _mapController.camera.zoom, end: destZoom);
+
+    final controller = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
+    final Animation<double> animation = CurvedAnimation(parent: controller, curve: Curves.fastOutSlowIn);
+
+    controller.addListener(() {
+      _mapController.move(
+        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
+        zoomTween.evaluate(animation),
+      );
+    });
+
+    animation.addStatusListener((status) {
+      if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
+        controller.dispose();
+      }
+    });
+
+    controller.forward();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,17 +81,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             const Text('🙏', style: TextStyle(fontSize: 20)),
             const SizedBox(width: 8),
-            ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [AppColors.accent, AppColors.accentLight],
-              ).createShader(bounds),
-              child: Text(
-                'Ganesha Tracker',
-                style: GoogleFonts.plusJakartaSans(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                  letterSpacing: -0.5,
+            Flexible(
+              child: ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [AppColors.accent, AppColors.accentLight],
+                ).createShader(bounds),
+                child: Text(
+                  'Ganesha Tracker',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    letterSpacing: -0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
@@ -134,9 +163,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () {
               final pos = ref.read(liveLocationProvider).value;
               if (pos != null) {
-                _mapController.move(
-                  LatLng(pos.latitude, pos.longitude), 
-                  _mapController.camera.zoom,
+                double targetZoom = _mapController.camera.zoom;
+                if (targetZoom < 18.0) {
+                  targetZoom = 18.0;
+                } else if (targetZoom < 19.0) {
+                  targetZoom += 0.5;
+                }
+                _animatedMapMove(
+                  LatLng(pos.latitude, pos.longitude),
+                  targetZoom,
                 );
               }
             },
@@ -157,8 +192,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
-                  initialCenter: initialCenter,
-                  initialZoom: 18.0, // Zoom in a bit more for building view
+                  initialCenter: (widget.initialLat != null && widget.initialLng != null)
+                      ? LatLng(widget.initialLat!, widget.initialLng!)
+                      : initialCenter,
+                  initialZoom: widget.targetBuildingId != null ? 17.0 : 18.0,
+                  onMapReady: () {
+                    if (widget.targetBuildingId != null && !_hasZoomedToTarget) {
+                      _hasZoomedToTarget = true;
+                      Future.delayed(const Duration(milliseconds: 300), () {
+                        if (mounted && widget.initialLat != null && widget.initialLng != null) {
+                          _animatedMapMove(
+                            LatLng(widget.initialLat!, widget.initialLng!),
+                            19.5,
+                          );
+                        }
+                      });
+                    }
+                  },
                   onTap: (tapPosition, point) {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -273,6 +323,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final canSeeAllTags = profile?.canSeeAllTags ?? false;
 
     var filteredBuildings = buildings.where((building) {
+      if (widget.targetBuildingId != null) {
+        return building.id == widget.targetBuildingId;
+      }
       if (!canSeeAllTags && building.collectedCount == 0) return false;
       
       if (_selectedFilter == 'all') return true;

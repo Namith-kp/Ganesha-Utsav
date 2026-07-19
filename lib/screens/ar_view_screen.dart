@@ -5,7 +5,6 @@ import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../providers/map_provider.dart';
 import '../main.dart';
 
@@ -198,8 +197,8 @@ class _ARViewScreenState extends ConsumerState<ARViewScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: building.collectedCount == building.totalUnits 
-                                  ? AppColors.green.withOpacity(0.9)
-                                  : AppColors.accent.withOpacity(0.9),
+                                  ? AppColors.green.withValues(alpha: 0.9)
+                                  : AppColors.accent.withValues(alpha: 0.9),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: Colors.white, width: 2),
                               boxShadow: const [

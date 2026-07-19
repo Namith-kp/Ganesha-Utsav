@@ -443,6 +443,17 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                 ref.read(currentPanoramaIdProvider.notifier).updateId(closestNode!.id);
                 setState(() {
                   _foregroundId = closestNode!.id;
+                  
+                  // Orient camera towards the requested location (widget.lat, widget.lon)
+                  final distanceCalc = const latlong.Distance();
+                  final bearing = distanceCalc.bearing(
+                    latlong.LatLng(closestNode!.lat, closestNode!.lon),
+                    latlong.LatLng(widget.lat, widget.lon),
+                  );
+                  double headingDegrees = closestNode!.heading * (180.0 / math.pi);
+                  _initialLongitude = bearing - headingDegrees;
+                  _initialLongitude = (_initialLongitude + 540) % 360 - 180;
+                  _cameraLongitude.value = _initialLongitude;
                 });
               }
             });

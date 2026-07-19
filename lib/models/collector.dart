@@ -7,6 +7,13 @@ class Collector {
   final String role; // 'admin', 'collector', 'team_member', or 'viewer'
   final bool isCoreTeamMember;
   final String? photoUrl;
+  
+  // Team Fund fields
+  final String? fundStatus; // 'paid' or 'pending'
+  final double? fundAmount;
+  final String? fundPaymentMethod;
+  final DateTime? fundCollectedAt;
+  final String? fundCollectedBy;
 
   Collector({
     required this.id,
@@ -17,6 +24,11 @@ class Collector {
     required this.role,
     this.isCoreTeamMember = false,
     this.photoUrl,
+    this.fundStatus,
+    this.fundAmount,
+    this.fundPaymentMethod,
+    this.fundCollectedAt,
+    this.fundCollectedBy,
   });
 
   factory Collector.fromMap(Map<String, dynamic> map, String id) {
@@ -29,6 +41,13 @@ class Collector {
       role: map['role'] as String? ?? 'viewer',
       isCoreTeamMember: map['isCoreTeamMember'] as bool? ?? false,
       photoUrl: map['photoUrl'] as String?,
+      fundStatus: map['fundStatus'] as String? ?? 'pending',
+      fundAmount: (map['fundAmount'] as num?)?.toDouble(),
+      fundPaymentMethod: map['fundPaymentMethod'] as String?,
+      fundCollectedAt: map['fundCollectedAt'] != null 
+          ? (map['fundCollectedAt'] as dynamic).toDate() 
+          : null,
+      fundCollectedBy: map['fundCollectedBy'] as String?,
     );
   }
 
@@ -41,6 +60,11 @@ class Collector {
       'role': role,
       'isCoreTeamMember': isCoreTeamMember,
       'photoUrl': photoUrl,
+      'fundStatus': fundStatus,
+      'fundAmount': fundAmount,
+      'fundPaymentMethod': fundPaymentMethod,
+      'fundCollectedAt': fundCollectedAt,
+      'fundCollectedBy': fundCollectedBy,
     };
   }
 

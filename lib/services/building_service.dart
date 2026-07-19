@@ -258,6 +258,29 @@ class BuildingService {
   Future<List<Map<String, dynamic>>> getFlattenedCollectionData({String? filterCollectorId}) async {
     final buildingsSnapshot = await _firestore.collection('buildings').get();
     
+    // Fetch team funds
+    final collectorsSnapshot = await _firestore.collection('collectors').get();
+    final teamFundsData = <Map<String, dynamic>>[];
+    for (var doc in collectorsSnapshot.docs) {
+      final data = doc.data();
+      final role = data['role'] ?? 'viewer';
+      final isCore = data['isCoreTeamMember'] ?? false;
+      if (role == 'team_member' || isCore) {
+        if (data['fundStatus'] == 'paid') {
+          if (filterCollectorId != null && data['fundCollectedBy'] != filterCollectorId) continue;
+          teamFundsData.add({
+            'Building Name': 'Team Funds',
+            'Unit Name': data['name'] ?? 'Team Member',
+            'Status': 'collected',
+            'Amount Collected': (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
+            'Payment Method': data['fundPaymentMethod'] ?? 'Cash',
+            'Collected By': data['fundCollectedBy'] ?? '',
+            'Collected At': (data['fundCollectedAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+          });
+        }
+      }
+    }
+    
     final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
       final buildingName = buildingDoc.data()['name'] ?? 'Unknown Building';
       final unitsSnapshot = await buildingDoc.reference.collection('units').get();
@@ -281,13 +304,58 @@ class BuildingService {
     });
 
     final results = await Future.wait(unitFutures);
-    return results.expand((x) => x).toList();
+    final flattened = results.expand((x) => x).toList();
+    flattened.addAll(teamFundsData);
+    return flattened;
   }
 
   // Get detailed collections for the reports UI
   Future<List<Map<String, dynamic>>> getDetailedCollections({String? filterCollectorId}) async {
     // Fetch buildings
     final buildingsSnapshot = await _firestore.collection('buildings').get();
+    
+    // Fetch team funds
+    final collectorsSnapshot = await _firestore.collection('collectors').get();
+    final teamFundsData = <Map<String, dynamic>>[];
+    for (var doc in collectorsSnapshot.docs) {
+      final data = doc.data();
+      final role = data['role'] ?? 'viewer';
+      final isCore = data['isCoreTeamMember'] ?? false;
+      if (role == 'team_member' || isCore) {
+        if (data['fundStatus'] == 'paid') {
+          if (filterCollectorId != null && data['fundCollectedBy'] != filterCollectorId) continue;
+          
+          final dummyBuilding = Building(
+            id: 'team_funds',
+            name: 'Team Funds',
+            lat: 0,
+            lng: 0,
+            type: 'team_funds',
+            totalUnits: 1,
+            collectedCount: 1,
+            totalCollected: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
+            createdBy: 'system',
+            createdAt: DateTime.now(),
+          );
+          
+          final dummyUnit = Unit(
+            id: doc.id,
+            buildingId: 'team_funds',
+            unitLabel: data['name'] ?? 'Team Member',
+            status: 'collected',
+            amount: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
+            paymentMethod: data['fundPaymentMethod'] ?? 'Cash',
+            collectedBy: data['fundCollectedBy'],
+            collectedAt: (data['fundCollectedAt'] as Timestamp?)?.toDate(),
+          );
+          
+          teamFundsData.add({
+            'unit': dummyUnit,
+            'building': dummyBuilding,
+          });
+        }
+      }
+    }
     
     // Fetch units for all buildings in parallel
     final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
@@ -311,6 +379,7 @@ class BuildingService {
 
     final results = await Future.wait(unitFutures);
     final collections = results.expand((x) => x).toList();
+    collections.addAll(teamFundsData);
     
     // Sort descending by date
     collections.sort((a, b) {
@@ -320,6 +389,46 @@ class BuildingService {
       if (dateA == null) return 1;
       if (dateB == null) return -1;
       return dateB.compareTo(dateA);
+    });
+    
+    return collections;
+  }
+
+  // Get pending/uncollected units
+  Future<List<Map<String, dynamic>>> getPendingCollections() async {
+    final buildingsSnapshot = await _firestore.collection('buildings').get();
+    
+    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+      final building = Building.fromMap(buildingDoc.data(), buildingDoc.id);
+      final unitsSnapshot = await buildingDoc.reference.collection('units').get();
+      
+      final List<Map<String, dynamic>> buildingCollections = [];
+      for (final unitDoc in unitsSnapshot.docs) {
+        final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
+        if (unit.status != 'collected') {
+          buildingCollections.add({
+            'unit': unit,
+            'building': building,
+          });
+        }
+      }
+      return buildingCollections;
+    });
+
+    final results = await Future.wait(unitFutures);
+    final collections = results.expand((x) => x).toList();
+    
+    // Sort by building name, then unit label
+    collections.sort((a, b) {
+      final bA = a['building'] as Building;
+      final bB = b['building'] as Building;
+      int comp = bA.name.compareTo(bB.name);
+      if (comp == 0) {
+        final uA = a['unit'] as Unit;
+        final uB = b['unit'] as Unit;
+        return uA.unitLabel.compareTo(uB.unitLabel);
+      }
+      return comp;
     });
     
     return collections;

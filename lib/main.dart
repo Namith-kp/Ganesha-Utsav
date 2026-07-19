@@ -107,7 +107,7 @@ class MyApp extends ConsumerWidget {
         error: AppColors.crimson,
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.bgBase.withOpacity(0.95),
+        backgroundColor: AppColors.bgBase.withValues(alpha: 0.95),
         elevation: 0,
         scrolledUnderElevation: 0,
         titleTextStyle: GoogleFonts.plusJakartaSans(

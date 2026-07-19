@@ -94,7 +94,7 @@ class _TeamTab extends ConsumerWidget {
               ),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: AppColors.accent.withOpacity(0.2),
+                  backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                   foregroundColor: AppColors.accent,
                   child: Text(collector.name[0].toUpperCase(), style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold)),
                 ),

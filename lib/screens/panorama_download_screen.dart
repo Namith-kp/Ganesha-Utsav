@@ -104,7 +104,7 @@ class _PromptView extends StatelessWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.gold.withOpacity(0.15 + pulseCtrl.value * 0.25),
+                      color: AppColors.gold.withValues(alpha: 0.15 + pulseCtrl.value * 0.25),
                       blurRadius: 30 + pulseCtrl.value * 20,
                       spreadRadius: 4,
                     ),
@@ -221,7 +221,7 @@ class _DownloadingView extends ConsumerWidget {
                 TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0, end: progress.fraction),
                   duration: const Duration(milliseconds: 400),
-                  builder: (_, value, __) => SizedBox(
+                  builder: (_, value, _) => SizedBox(
                     width: 90,
                     height: 90,
                     child: Stack(
@@ -262,7 +262,7 @@ class _DownloadingView extends ConsumerWidget {
                 TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0, end: progress.fraction),
                   duration: const Duration(milliseconds: 400),
-                  builder: (_, value, __) => ClipRRect(
+                  builder: (_, value, _) => ClipRRect(
                     borderRadius: BorderRadius.circular(100),
                     child: LinearProgressIndicator(
                       value: value,
@@ -382,7 +382,7 @@ class _GoldButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: AppColors.accent.withOpacity(0.35),
+              color: AppColors.accent.withValues(alpha: 0.35),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),

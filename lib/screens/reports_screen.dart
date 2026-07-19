@@ -17,6 +17,9 @@ import '../utils/building_dialogs.dart';
 import '../providers/auth_provider.dart';
 import '../services/auth_service.dart';
 import 'collector_report_screen.dart';
+import '../models/spending.dart';
+import '../services/spending_service.dart';
+import '../utils/spending_dialogs.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -28,22 +31,58 @@ class ReportsScreen extends ConsumerStatefulWidget {
 class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTickerProviderStateMixin {
   bool _isExporting = false;
   Future<List<Map<String, dynamic>>>? _collectionsFuture;
+  Future<List<Map<String, dynamic>>>? _allCollectionsFuture;
   Future<List<Collector>>? _collectorsFuture;
+  Future<List<Spending>>? _spendingsFuture;
+  Future<List<Map<String, dynamic>>>? _tasksFuture;
   TabController? _tabController;
+  final ScrollController _collectionsScrollController = ScrollController();
   int _touchedBarIndex = -1;
   String _filterType = 'All Time';
   DateTime? _customDate;
+  bool _showCollectorsView = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // Tab controller initialization will be handled in didChangeDependencies
     _loadData();
+    _searchController.addListener(() {
+      setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
+    });
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final profile = ref.read(collectorProfileProvider).value;
+    final canSeeTeamData = profile?.canSeeTeamData ?? false;
+    final isCollector = profile?.isCollector ?? false;
+    final showLeaderboardTab = isCollector && !canSeeTeamData;
+    
+    int length = 1; // Collections
+    if (showLeaderboardTab) length += 1; // Leaderboard
+    if (canSeeTeamData) length += 2; // Team Funds, Spendings
+    if (isCollector) length += 1; // Tasks
+
+    if (_tabController?.length != length) {
+      _tabController?.dispose();
+      _tabController = TabController(length: length, vsync: this);
+      _tabController?.addListener(() {
+        setState(() {}); // Rebuild to update FAB visibility
+      });
+    }
   }
   
   @override
   void dispose() {
     _tabController?.dispose();
+    _collectionsScrollController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -54,7 +93,47 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       : null;
     
     _collectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: filterId);
+    _allCollectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
     _collectorsFuture = AuthService().getAllCollectors();
+    _spendingsFuture = ref.read(spendingServiceProvider).getSpendings();
+    _tasksFuture = ref.read(buildingServiceProvider).getPendingCollections();
+  }
+
+  Future<void> _confirmDeleteSpending(Spending spending) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: Text('Delete Spending', style: GoogleFonts.plusJakartaSans(color: Colors.white)),
+        content: Text('Are you sure you want to delete this spending of ₹${spending.amount.toStringAsFixed(0)}?', style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: GoogleFonts.plusJakartaSans(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ref.read(spendingServiceProvider).deleteSpending(spending.id);
+        setState(() {
+          _loadData();
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Spending deleted successfully.')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+        }
+      }
+    }
   }
 
   Future<void> _exportToCsv() async {
@@ -128,9 +207,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
         title: const Text('Reports'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Collections'),
-            Tab(text: 'Leaderboard'),
+          tabs: [
+            const Tab(text: 'Collections'),
+            if ((profile?.isCollector ?? false) && !(profile?.canSeeTeamData ?? false)) const Tab(text: 'Leaderboard'),
+            if (profile?.canSeeTeamData ?? false) const Tab(text: 'Team Funds'),
+            if (profile?.canSeeTeamData ?? false) const Tab(text: 'Spendings'),
+            if (profile?.isCollector ?? false) const Tab(text: 'Tasks'),
           ],
         ),
         actions: [
@@ -154,16 +236,40 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildCollectionsTab(),
-          _buildLeaderboardTab(isAdmin),
+          _buildCollectionsTab(isAdmin, _collectionsScrollController),
+          if ((profile?.isCollector ?? false) && !(profile?.canSeeTeamData ?? false)) _buildLeaderboardTab(isAdmin),
+          if (profile?.canSeeTeamData ?? false) _buildTeamFundsTab(isAdmin, profile?.id),
+          if (profile?.canSeeTeamData ?? false) _buildSpendingsTab(isAdmin, profile?.id, profile?.name),
+          if (profile?.isCollector ?? false) _buildTasksTab(),
         ],
       ),
+      floatingActionButton: (_tabController?.index == 3 && (profile?.canSeeTeamData ?? false))
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final didSave = await showAddSpendingBottomSheet(
+                  context,
+                  ref.read(spendingServiceProvider),
+                  profile!.id,
+                  profile.name,
+                );
+                if (didSave == true) {
+                  setState(() {
+                    _loadData();
+                  });
+                }
+              },
+              icon: const Icon(LucideIcons.plus),
+              label: const Text('Add Spending'),
+              backgroundColor: const Color(0xFF5E5CE6),
+              foregroundColor: Colors.white,
+            )
+          : null,
     );
   }
 
-  Widget _buildCollectionsTab() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _collectionsFuture,
+  Widget _buildTeamFundsTab(bool isAdmin, String? currentUserId) {
+    return FutureBuilder<List<Collector>>(
+      future: _collectorsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -172,7 +278,392 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           return Center(child: Text('Error: ${snapshot.error}'));
         }
         
-        final collections = snapshot.data ?? [];
+        final collectors = snapshot.data ?? [];
+        final teamMembers = collectors.where((c) => c.role == 'team_member' || c.isCoreTeamMember).toList();
+        
+        if (teamMembers.isEmpty) {
+          return const Center(child: Text('No team members found.', style: TextStyle(color: Colors.white54)));
+        }
+
+        double totalFunds = 0;
+        for (var member in teamMembers) {
+          if (member.fundStatus == 'paid' && member.fundAmount != null) {
+            totalFunds += member.fundAmount!;
+          }
+        }
+
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF5E5CE6), Color(0xFF3F3D96)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF5E5CE6).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6)),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total Team Funds', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      Text('₹${totalFunds.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(LucideIcons.users, color: Colors.white, size: 28),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                itemCount: teamMembers.length,
+                itemBuilder: (context, index) {
+                  final member = teamMembers[index];
+                  final isPaid = member.fundStatus == 'paid';
+                  final amount = member.fundAmount ?? 0.0;
+                  
+                  return Card(
+                    color: const Color(0xFF1E1E1E),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      title: Text(member.name, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        isPaid ? 'Paid ₹${amount.toStringAsFixed(0)} via ${member.fundPaymentMethod}' : 'Pending',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: isPaid ? Colors.green[400] : Colors.orange[400],
+                          fontSize: 13,
+                        ),
+                      ),
+                      trailing: isAdmin ? Icon(LucideIcons.edit2, color: Colors.white.withValues(alpha: 0.5), size: 18) : null,
+                      onTap: isAdmin ? () => _showTeamFundBottomSheet(context, member, currentUserId) : null,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTasksTab() {
+    _tasksFuture ??= ref.read(buildingServiceProvider).getPendingCollections();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _tasksFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        
+        final tasks = snapshot.data ?? [];
+        
+        if (tasks.isEmpty) {
+          return const Center(child: Text('No pending tasks.', style: TextStyle(color: Colors.white54)));
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: tasks.length,
+          itemBuilder: (context, index) {
+            final task = tasks[index];
+            final Unit unit = task['unit'];
+            final Building building = task['building'];
+            
+            return Card(
+              color: const Color(0xFF1E1E1E),
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    building.totalUnits > 1 ? LucideIcons.building2 : LucideIcons.home,
+                    color: Colors.orange,
+                  ),
+                ),
+                title: Text('${building.name} - ${unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.clock, size: 14, color: Colors.white54),
+                      const SizedBox(width: 4),
+                      Text('Pending', style: GoogleFonts.plusJakartaSans(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                trailing: const Icon(LucideIcons.chevronRight, color: Colors.white54),
+                onTap: () {
+                  showUnitAmountForm(context, ref, building, unit, fromReports: true);
+                  setState(() {
+                    _loadData(); // Reload tasks after updating
+                  });
+                },
+              ),
+            );
+          },
+        );
+      }
+    );
+  }
+
+  Widget _buildSpendingsTab(bool isAdmin, String? currentUserId, String? currentUserName) {
+    return FutureBuilder(
+      future: Future.wait([
+        _spendingsFuture ?? Future.value([]),
+        _allCollectionsFuture ?? Future.value([]),
+        _collectorsFuture ?? Future.value([])
+      ]),
+      builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final spendings = (snapshot.data?[0] as List<Spending>?) ?? [];
+        final allCollections = (snapshot.data?[1] as List<Map<String, dynamic>>?) ?? [];
+        final allCollectors = (snapshot.data?[2] as List<Collector>?) ?? [];
+
+        double totalCollections = 0;
+        for (var data in allCollections) {
+          final Unit unit = data['unit'];
+          totalCollections += unit.amount;
+        }
+
+        double totalTeamFunds = 0;
+        for (var member in allCollectors) {
+          if (member.fundStatus == 'paid' && member.fundAmount != null) {
+            totalTeamFunds += member.fundAmount!;
+          }
+        }
+
+        double totalSpendings = 0;
+        Map<String, double> spendingsByReason = {};
+        for (var spending in spendings) {
+          totalSpendings += spending.amount;
+          spendingsByReason[spending.reason] = (spendingsByReason[spending.reason] ?? 0) + spending.amount;
+        }
+
+        double remainingFunds = (totalCollections + totalTeamFunds) - totalSpendings;
+
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetricCard(
+                        'Total Spendings',
+                        '₹${totalSpendings.toStringAsFixed(0)}',
+                        LucideIcons.trendingDown,
+                        Colors.redAccent,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildMetricCard(
+                        'Remaining Funds',
+                        '₹${remainingFunds.toStringAsFixed(0)}',
+                        LucideIcons.wallet,
+                        remainingFunds >= 0 ? Colors.greenAccent : Colors.redAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (spendings.isNotEmpty && spendingsByReason.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Container(
+                  height: 200,
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: PieChart(
+                          PieChartData(
+                            sectionsSpace: 2,
+                            centerSpaceRadius: 40,
+                            sections: spendingsByReason.entries.map((entry) {
+                              final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
+                              return PieChartSectionData(
+                                color: color,
+                                value: entry.value,
+                                title: '',
+                                radius: 25,
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 1,
+                        child: ListView(
+                          children: spendingsByReason.entries.map((entry) {
+                            final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      entry.key, 
+                                      style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text('₹${entry.value.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (spendings.isEmpty)
+              const SliverFillRemaining(
+                child: Center(
+                  child: Text('No spendings recorded yet.', style: TextStyle(color: Colors.white54)),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final spending = spendings[index];
+                      return _SpendingCard(
+                        spending: spending,
+                        isAdmin: isAdmin,
+                        onEdit: () async {
+                          final didUpdate = await showEditSpendingBottomSheet(context, ref.read(spendingServiceProvider), spending);
+                          if (didUpdate == true) {
+                            setState(() {
+                              _loadData();
+                            });
+                          }
+                        },
+                        onDelete: () => _confirmDeleteSpending(spending),
+                      );
+                    },
+                    childCount: spendings.length,
+                  ),
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 80)), // Space for FAB
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(title, style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(value, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  void _showTeamFundBottomSheet(BuildContext context, Collector member, String? currentUserId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: _TeamFundForm(member: member, currentUserId: currentUserId, onSave: _loadData),
+        );
+      },
+    );
+  }
+
+  Widget _buildCollectionsTab(bool isAdmin, ScrollController scrollController) {
+    return FutureBuilder(
+      future: Future.wait([
+        _collectionsFuture ?? Future.value([]),
+        _collectorsFuture ?? Future.value([]),
+      ]),
+      builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        
+        final collections = (snapshot.data?[0] as List<Map<String, dynamic>>?) ?? [];
+        final collectors = (snapshot.data?[1] as List<Collector>?) ?? [];
         
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
@@ -199,6 +690,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
            
            return false;
         }).toList();
+
+        // Apply search filter
+        if (_searchQuery.isNotEmpty) {
+          filteredCollections = filteredCollections.where((item) {
+            final Unit unit = item['unit'];
+            final Building building = item['building'];
+            final buildingName = building.name.toLowerCase();
+            final unitLabel = unit.unitLabel.toLowerCase();
+            return buildingName.contains(_searchQuery) || unitLabel.contains(_searchQuery);
+          }).toList();
+        }
 
         double totalCollected = 0.0;
         double todayCollected = 0.0;
@@ -235,6 +737,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
         final sortedDates = collectionsByDate.keys.toList()..sort((a, b) => b.compareTo(a));
 
         return CustomScrollView(
+          controller: scrollController,
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
@@ -279,54 +782,131 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Recent Collections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: DropdownButton<String>(
-                            value: _filterType,
-                            icon: Icon(LucideIcons.filter, size: 16, color: Colors.blue.shade700),
-                            style: TextStyle(color: Colors.blue.shade800, fontWeight: FontWeight.bold, fontSize: 14),
-                            underline: const SizedBox(),
-                            items: ['All Time', 'Today', 'Yesterday', 'Custom Date'].map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                            onChanged: (String? newValue) async {
-                              if (newValue == 'Custom Date') {
-                                 final picked = await showDatePicker(
-                                   context: context,
-                                   initialDate: _customDate ?? DateTime.now(),
-                                   firstDate: DateTime(2020),
-                                   lastDate: DateTime.now(),
-                                 );
-                                 if (picked != null) {
-                                    setState(() {
-                                      _filterType = newValue!;
-                                      _customDate = DateTime(picked.year, picked.month, picked.day);
-                                    });
-                                 }
-                              } else if (newValue != null) {
-                                 setState(() {
-                                   _filterType = newValue;
-                                 });
-                              }
-                            },
-                          ),
+                        const Text('Collections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                        Row(
+                          children: [
+                            if (isAdmin)
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: _showCollectorsView ? const Color(0xFF5E5CE6).withValues(alpha: 0.2) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white24),
+                                ),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(20),
+                                  onTap: () => setState(() => _showCollectorsView = !_showCollectorsView),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    child: Row(
+                                      children: [
+                                        Icon(LucideIcons.users, size: 14, color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70),
+                                        const SizedBox(width: 6),
+                                        Text('By Collector', style: TextStyle(color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            if (!_showCollectorsView)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                                ),
+                                child: DropdownButton<String>(
+                                  value: _filterType,
+                                  dropdownColor: const Color(0xFF1E1E1E),
+                                  icon: Icon(LucideIcons.filter, size: 16, color: Colors.blue.shade400),
+                                  style: TextStyle(color: Colors.blue.shade300, fontWeight: FontWeight.bold, fontSize: 14),
+                                  underline: const SizedBox(),
+                                  items: ['All Time', 'Today', 'Yesterday', 'Custom Date'].map((String value) {
+                                    return DropdownMenuItem<String>(
+                                      value: value,
+                                      child: Text(value),
+                                    );
+                                  }).toList(),
+                                  onChanged: (String? newValue) async {
+                                    if (newValue == 'Custom Date') {
+                                       final picked = await showDatePicker(
+                                         context: context,
+                                         initialDate: _customDate ?? DateTime.now(),
+                                         firstDate: DateTime(2020),
+                                         lastDate: DateTime.now(),
+                                         builder: (context, child) {
+                                           return Theme(
+                                             data: ThemeData.dark().copyWith(
+                                               colorScheme: const ColorScheme.dark(
+                                                 primary: Color(0xFF5E5CE6),
+                                                 onPrimary: Colors.white,
+                                                 surface: Color(0xFF1E1E1E),
+                                                 onSurface: Colors.white,
+                                               ),
+                                             ),
+                                             child: child!,
+                                           );
+                                         },
+                                       );
+                                       if (picked != null) {
+                                          setState(() {
+                                            _filterType = newValue!;
+                                            _customDate = DateTime(picked.year, picked.month, picked.day);
+                                          });
+                                       }
+                                    } else if (newValue != null) {
+                                       setState(() {
+                                         _filterType = newValue!;
+                                       });
+                                    }
+                                  },
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
-                    if (_filterType == 'Custom Date' && _customDate != null)
+                    if (!_showCollectorsView && _filterType == 'Custom Date' && _customDate != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
-                        child: Text('Showing data for ${_customDate!.day}/${_customDate!.month}/${_customDate!.year}', style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500)),
+                        child: Text('Showing data for ${_customDate!.day}/${_customDate!.month}/${_customDate!.year}', style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w500)),
                       ),
+                    // Search bar placed right below the Collections header
+                    if (!_showCollectorsView) ...[  
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A2A2A),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 14),
+                          onChanged: (value) {
+                            setState(() => _searchQuery = value.trim().toLowerCase());
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Search building or unit name...',
+                            hintStyle: GoogleFonts.plusJakartaSans(color: Colors.white38, fontSize: 14),
+                            prefixIcon: const Icon(LucideIcons.search, color: Colors.white38, size: 18),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(LucideIcons.x, color: Colors.white38, size: 18),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                   ],
                 ),
@@ -336,92 +916,149 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Center(child: Text('No collections yet.')),
+                  child: Center(child: Text('No collections yet.', style: TextStyle(color: Colors.white54))),
                 ),
               ),
-            ...sortedDates.map((date) {
-              final items = collectionsByDate[date]!;
-              final summary = dateSummaries[date]!;
-              final dateStr = (date == todayStart) ? 'Today' : (date == todayStart.subtract(const Duration(days: 1)) ? 'Yesterday' : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}');
-              
-              // Sort items in this date by collectedAt descending
-              items.sort((a, b) {
-                final Unit uA = a['unit'];
-                final Unit uB = b['unit'];
-                if (uA.collectedAt == null || uB.collectedAt == null) return 0;
-                return uB.collectedAt!.compareTo(uA.collectedAt!);
-              });
+            if (!_showCollectorsView)
+              ...sortedDates.map((date) {
+                final items = collectionsByDate[date]!;
+                final summary = dateSummaries[date]!;
+                final dateStr = (date == todayStart) ? 'Today' : (date == todayStart.subtract(const Duration(days: 1)) ? 'Yesterday' : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}');
+                
+                // Sort items in this date by collectedAt descending
+                items.sort((a, b) {
+                  final Unit uA = a['unit'];
+                  final Unit uB = b['unit'];
+                  if (uA.collectedAt == null || uB.collectedAt == null) return 0;
+                  return uB.collectedAt!.compareTo(uA.collectedAt!);
+                });
 
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    if (index == 0) {
-                      // Header
-                      return Padding(
-                        padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(dateStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-                            Row(
-                              children: [
-                                if (summary['UPI']! > 0)
-                                  Text('UPI: ₹${summary['UPI']!.toStringAsFixed(0)}  ', style: TextStyle(fontSize: 12, color: Colors.purple.shade700, fontWeight: FontWeight.w600)),
-                                if (summary['Cash']! > 0)
-                                  Text('Cash: ₹${summary['Cash']!.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.orange.shade700, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    
-                    final itemIndex = index - 1;
-                    final item = items[itemIndex];
-                    final Unit unit = item['unit'];
-                    final Building building = item['building'];
-                    final date = unit.collectedAt;
-                    final timeStr = date != null ? '${date.hour}:${date.minute.toString().padLeft(2, '0')}' : 'No time';
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        child: ListTile(
-                          leading: unit.photoBase64 != null 
-                              ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.memory(base64Decode(unit.photoBase64!), width: 50, height: 50, fit: BoxFit.cover))
-                              : Icon(LucideIcons.imageOff, size: 50),
-                          title: Text('${building.name} - ${unit.unitLabel}'),
-                          subtitle: Row(
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      if (index == 0) {
+                        // Header
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(timeStr),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: unit.paymentMethod == 'UPI' ? Colors.purple.shade100 : Colors.orange.shade100,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(unit.paymentMethod ?? 'Unknown', style: TextStyle(
-                                  fontSize: 10,
-                                  color: unit.paymentMethod == 'UPI' ? Colors.purple.shade700 : Colors.orange.shade700,
-                                  fontWeight: FontWeight.bold,
-                                )),
-                              )
+                              Text(dateStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70)),
+                              Row(
+                                children: [
+                                  if (summary['UPI']! > 0)
+                                    Text('UPI: ₹${summary['UPI']!.toStringAsFixed(0)}  ', style: TextStyle(fontSize: 12, color: Colors.purple.shade300, fontWeight: FontWeight.w600)),
+                                  if (summary['Cash']! > 0)
+                                    Text('Cash: ₹${summary['Cash']!.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.orange.shade300, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
                             ],
                           ),
-                          trailing: Text('₹${unit.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
-                          onTap: () {
-                            showUnitAmountForm(context, ref, building, unit, fromReports: true);
-                          },
+                        );
+                      }
+                      
+                      final itemIndex = index - 1;
+                      final item = items[itemIndex];
+                      final Unit unit = item['unit'];
+                      final Building building = item['building'];
+                      final date = unit.collectedAt;
+                      final timeStr = date != null ? '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}' : 'No time';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          color: const Color(0xFF1E1E1E),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                          ),
+                          child: ListTile(
+                            leading: unit.photoBase64 != null 
+                                ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(base64Decode(unit.photoBase64!), width: 50, height: 50, fit: BoxFit.cover))
+                                : const Icon(LucideIcons.imageOff, size: 50, color: Colors.white24),
+                            title: Text('${building.name} - ${unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                children: [
+                                  Text(timeStr, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: unit.paymentMethod == 'UPI' ? Colors.purple.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(unit.paymentMethod ?? 'Unknown', style: TextStyle(
+                                      fontSize: 10,
+                                      color: unit.paymentMethod == 'UPI' ? Colors.purple.shade300 : Colors.orange.shade300,
+                                      fontWeight: FontWeight.bold,
+                                    )),
+                                  )
+                                ],
+                              ),
+                            ),
+                            trailing: Text('₹${unit.amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent)),
+                            onTap: () {
+                              showUnitAmountForm(context, ref, building, unit, fromReports: true);
+                            },
+                          ),
                         ),
+                      );
+                    },
+                    childCount: items.length + 1, // +1 for the header
+                  ),
+                );
+              }),
+            if (isAdmin && _showCollectorsView)
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    Map<String, double> collectorTotals = {};
+                    Map<String, List<Map<String, dynamic>>> collectorItems = {};
+                    for (var item in collections) {
+                       final Unit unit = item['unit'];
+                       if (unit.collectedBy != null) {
+                          collectorTotals[unit.collectedBy!] = (collectorTotals[unit.collectedBy!] ?? 0) + unit.amount;
+                          collectorItems.putIfAbsent(unit.collectedBy!, () => []).add(item);
+                       }
+                    }
+                    
+                    final sortedCollectors = List<Collector>.from(collectors);
+                    sortedCollectors.sort((a, b) => (collectorTotals[b.id] ?? 0).compareTo(collectorTotals[a.id] ?? 0));
+                    
+                    final collector = sortedCollectors[index];
+                    final total = collectorTotals[collector.id] ?? 0.0;
+                    if (total == 0) return const SizedBox.shrink();
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      color: const Color(0xFF1E1E1E),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundImage: collector.photoUrl != null ? NetworkImage(collector.photoUrl!) : null,
+                          child: collector.photoUrl == null ? const Icon(Icons.person) : null,
+                        ),
+                        title: Text(collector.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                        subtitle: Text('Rank #${index + 1}', style: const TextStyle(color: Colors.white54)),
+                        trailing: Text('₹${total.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                        onTap: () {
+                           Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
+                             collectorName: collector.name,
+                             collections: collectorItems[collector.id] ?? [],
+                           )));
+                        },
                       ),
                     );
                   },
-                  childCount: items.length + 1, // +1 for the header
+                  childCount: collectors.length,
                 ),
-              );
-            }).toList(),
+              ),
             const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
           ],
         );
@@ -430,8 +1067,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   }
 
   Widget _buildLeaderboardTab(bool isAdmin) {
+    _allCollectionsFuture ??= ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
     return FutureBuilder(
-      future: Future.wait([_collectionsFuture!, _collectorsFuture!]),
+      future: Future.wait([_allCollectionsFuture!, _collectorsFuture!]),
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
         if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
@@ -486,11 +1124,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
   Widget _buildGradientCard(String title, double amount, Color color, {bool isCount = false}) {
     return Card(
-      color: color.withOpacity(0.15),
+      color: color.withValues(alpha: 0.25),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: color.withOpacity(0.3)),
+        side: BorderSide(color: color.withValues(alpha: 0.5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -572,10 +1210,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
             enabled: true,
             handleBuiltInTouches: false,
             touchCallback: (FlTouchEvent event, barTouchResponse) {
-              if (event.isInterestedForInteractions && barTouchResponse != null && barTouchResponse.spot != null) {
-                setState(() {
-                  _touchedBarIndex = barTouchResponse.spot!.touchedBarGroupIndex;
-                });
+              if (event is FlTapDownEvent) {
+                 if (barTouchResponse != null && barTouchResponse.spot != null) {
+                    setState(() {
+                      _touchedBarIndex = barTouchResponse.spot!.touchedBarGroupIndex;
+                    });
+                 }
               }
             },
             touchTooltipData: BarTouchTooltipData(
@@ -587,6 +1227,331 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 );
               },
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TeamFundForm extends StatefulWidget {
+  final Collector member;
+  final String? currentUserId;
+  final VoidCallback onSave;
+
+  const _TeamFundForm({
+    required this.member,
+    required this.currentUserId,
+    required this.onSave,
+  });
+
+  @override
+  State<_TeamFundForm> createState() => _TeamFundFormState();
+}
+
+class _TeamFundFormState extends State<_TeamFundForm> {
+  late TextEditingController _amountController;
+  late String _paymentMethod;
+  bool _isSaving = false;
+  late bool _isPaid;
+
+  @override
+  void initState() {
+    super.initState();
+    _isPaid = widget.member.fundStatus == 'paid';
+    _amountController = TextEditingController(text: widget.member.fundAmount?.toStringAsFixed(0) ?? '');
+    _paymentMethod = widget.member.fundPaymentMethod ?? 'UPI';
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_isPaid && _amountController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      await AuthService().updateTeamFundStatus(
+        uid: widget.member.id,
+        fundStatus: _isPaid ? 'paid' : 'pending',
+        fundAmount: _isPaid ? double.tryParse(_amountController.text) : null,
+        fundPaymentMethod: _isPaid ? _paymentMethod : null,
+        fundCollectedBy: _isPaid ? widget.currentUserId : null,
+      );
+      if (mounted) {
+        widget.onSave();
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Updated successfully', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Update ${widget.member.name}',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          Row(
+            children: [
+              Text('Status: ', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 16)),
+              const SizedBox(width: 16),
+              ChoiceChip(
+                label: const Text('Pending'),
+                selected: !_isPaid,
+                onSelected: (val) {
+                  if (val) setState(() => _isPaid = false);
+                },
+                selectedColor: Colors.orange.withValues(alpha: 0.2),
+                labelStyle: TextStyle(color: !_isPaid ? Colors.orange[400] : Colors.white70),
+                backgroundColor: const Color(0xFF2C2C2C),
+              ),
+              const SizedBox(width: 12),
+              ChoiceChip(
+                label: const Text('Paid'),
+                selected: _isPaid,
+                onSelected: (val) {
+                  if (val) setState(() => _isPaid = true);
+                },
+                selectedColor: Colors.green.withValues(alpha: 0.2),
+                labelStyle: TextStyle(color: _isPaid ? Colors.green[400] : Colors.white70),
+                backgroundColor: const Color(0xFF2C2C2C),
+              ),
+            ],
+          ),
+          
+          if (_isPaid) ...[
+            const SizedBox(height: 24),
+            TextField(
+              controller: _amountController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+              decoration: InputDecoration(
+                labelText: 'Amount (₹)',
+                labelStyle: const TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(Icons.currency_rupee, color: Colors.white54),
+                filled: true,
+                fillColor: const Color(0xFF2C2C2C),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            
+            Text('Payment Method', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _paymentMethod = 'UPI'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _paymentMethod == 'UPI' ? const Color(0xFF5E5CE6).withValues(alpha: 0.2) : const Color(0xFF2C2C2C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _paymentMethod == 'UPI' ? const Color(0xFF5E5CE6) : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'UPI',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: _paymentMethod == 'UPI' ? const Color(0xFF5E5CE6) : Colors.white54,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _paymentMethod = 'Cash'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _paymentMethod == 'Cash' ? Colors.green.withValues(alpha: 0.2) : const Color(0xFF2C2C2C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _paymentMethod == 'Cash' ? Colors.green : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Cash',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: _paymentMethod == 'Cash' ? Colors.green : Colors.white54,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          
+          const SizedBox(height: 32),
+          ElevatedButton(
+            onPressed: _isSaving ? null : _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5E5CE6),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: _isSaving
+                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : Text('Save Update', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpendingCard extends StatefulWidget {
+  final Spending spending;
+  final bool isAdmin;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _SpendingCard({
+    required this.spending,
+    required this.isAdmin,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SpendingCard> createState() => _SpendingCardState();
+}
+
+class _SpendingCardState extends State<_SpendingCard> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFF1E1E1E),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _isExpanded = !_isExpanded;
+          });
+        },
+        onLongPress: widget.isAdmin ? () {
+          // If you really want long press to do something specific, you can add it here.
+          // Currently, tapping expands the card which shows the delete/edit options.
+        } : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(widget.spending.reason, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16)),
+                  ),
+                  Text('₹${widget.spending.amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                ],
+              ),
+              if (_isExpanded) ...[
+                const SizedBox(height: 12),
+                const Divider(color: Colors.white12),
+                const SizedBox(height: 12),
+                Text('By: ${widget.spending.createdByName}', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+                if (widget.spending.createdAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Date: ${widget.spending.createdAt!.day.toString().padLeft(2, '0')}/${widget.spending.createdAt!.month.toString().padLeft(2, '0')}/${widget.spending.createdAt!.year} at ${widget.spending.createdAt!.hour.toString().padLeft(2, '0')}:${widget.spending.createdAt!.minute.toString().padLeft(2, '0')}', 
+                      style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontSize: 13),
+                    ),
+                  ),
+                if (widget.spending.photoBase64 != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(base64Decode(widget.spending.photoBase64!), width: double.infinity, fit: BoxFit.contain),
+                    ),
+                  ),
+                if (widget.isAdmin) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        icon: Icon(LucideIcons.edit2, color: Colors.white.withValues(alpha: 0.7), size: 16),
+                        label: Text('Edit', style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
+                        onPressed: widget.onEdit,
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        icon: Icon(LucideIcons.trash2, color: Colors.redAccent.withValues(alpha: 0.8), size: 16),
+                        label: Text('Delete', style: GoogleFonts.plusJakartaSans(color: Colors.redAccent)),
+                        onPressed: widget.onDelete,
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ],
           ),
         ),
       ),
