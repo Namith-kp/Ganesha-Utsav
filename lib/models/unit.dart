@@ -11,6 +11,8 @@ class Unit {
   final String? photoBase64;
   final String? paymentMethod;
   final DateTime? updatedAt;
+  final double? originalAmount; // set on first admin edit, never changed again
+  final String? donationItem; // for non-monetary donations like Rice, Sarees
 
   Unit({
     required this.id,
@@ -23,6 +25,8 @@ class Unit {
     this.photoBase64,
     this.paymentMethod,
     this.updatedAt,
+    this.originalAmount,
+    this.donationItem,
   });
 
   factory Unit.fromMap(Map<String, dynamic> map, String id) {
@@ -37,6 +41,8 @@ class Unit {
       photoBase64: map['photoBase64'] as String?,
       paymentMethod: map['paymentMethod'] as String?,
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
+      originalAmount: (map['originalAmount'] as num?)?.toDouble(),
+      donationItem: map['donationItem'] as String?,
     );
   }
 
@@ -51,6 +57,8 @@ class Unit {
       if (photoBase64 != null) 'photoBase64': photoBase64,
       if (paymentMethod != null) 'paymentMethod': paymentMethod,
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
+      if (originalAmount != null) 'originalAmount': originalAmount,
+      if (donationItem != null && donationItem!.isNotEmpty) 'donationItem': donationItem,
     };
   }
 }

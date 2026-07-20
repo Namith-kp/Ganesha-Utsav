@@ -296,8 +296,8 @@ void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building bui
   );
 }
 
-void showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit, {bool fromReports = false}) {
-  showModalBottomSheet(
+Future<void> showUnitAmountForm(BuildContext context, WidgetRef ref, Building building, Unit unit, {bool fromReports = false}) async {
+  await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: AppColors.bgBase,
@@ -329,6 +329,7 @@ class _AmountFormWidget extends ConsumerStatefulWidget {
 class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
   bool isEditing = false;
   late TextEditingController amountController;
+  late TextEditingController donationItemController;
   bool isSubmitting = false;
   String? photoBase64;
   String? paymentMethod;
@@ -338,14 +339,38 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
     super.initState();
     final isAlreadyCollected = widget.unit.status == 'collected';
     amountController = TextEditingController(text: isAlreadyCollected ? widget.unit.amount.toString() : '');
+    donationItemController = TextEditingController(text: widget.unit.donationItem ?? '');
+    amountController.addListener(_onFieldChanged);
+    donationItemController.addListener(_onFieldChanged);
     photoBase64 = widget.unit.photoBase64;
     paymentMethod = widget.unit.paymentMethod;
   }
 
+  void _onFieldChanged() {
+    setState(() {});
+  }
+
   @override
   void dispose() {
+    amountController.removeListener(_onFieldChanged);
+    donationItemController.removeListener(_onFieldChanged);
     amountController.dispose();
+    donationItemController.dispose();
     super.dispose();
+  }
+
+  bool get _isSubmitValid {
+    if (isSubmitting || photoBase64 == null) return false;
+    final amount = double.tryParse(amountController.text) ?? 0.0;
+    final donation = donationItemController.text.trim();
+    
+    // Require payment method if they entered an amount
+    if (amount > 0 && paymentMethod == null) return false;
+    
+    // Require either amount > 0 OR a donation item (unless resetting)
+    if (amount <= 0 && donation.isEmpty && widget.unit.status != 'collected') return false;
+    
+    return true;
   }
 
   void showZoomableImage(BuildContext ctx, String base64String) {
@@ -502,6 +527,25 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                 );
               }
             ),
+            if (widget.unit.donationItem != null && widget.unit.donationItem!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(LucideIcons.gift, size: 16, color: AppColors.accent),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text('Donated: ${widget.unit.donationItem!}', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.accent), textAlign: TextAlign.center)),
+                  ],
+                ),
+              ),
+            ],
             if (widget.unit.collectedBy != null && widget.unit.collectedBy!.isNotEmpty) ...[
               const SizedBox(height: 12),
               FutureBuilder<DocumentSnapshot>(
@@ -520,40 +564,173 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
               const SizedBox(height: 4),
               Text('${widget.unit.collectedAt!.toLocal().toString().split(' ')[0]} at ${widget.unit.collectedAt!.toLocal().toString().split(' ')[1].split('.')[0]}', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14)),
             ],
+            // Show last edited info if the unit has been corrected
+            if (widget.unit.originalAmount != null) ...[
+              const SizedBox(height: 12),
+              FutureBuilder<QuerySnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('corrections')
+                    .where('unitId', isEqualTo: widget.unit.id)
+                    .orderBy('timestamp', descending: true)
+                    .limit(1)
+                    .get(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox.shrink();
+                  final corrData = snapshot.data!.docs.first.data() as Map<String, dynamic>;
+                  final editorName = corrData['correctedByName'] as String? ?? 'Admin';
+                  final double oldAmt = (corrData['oldAmount'] as num?)?.toDouble() ?? 0.0;
+                  final double newAmt = (corrData['newAmount'] as num?)?.toDouble() ?? 0.0;
+                  final DateTime? editTime = (corrData['timestamp'] as Timestamp?)?.toDate();
+                  final editTimeStr = editTime != null
+                      ? '${editTime.toLocal().toString().split(' ')[0]} at ${editTime.toLocal().toString().split(' ')[1].split('.')[0]}'
+                      : '';
+                  return Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(LucideIcons.pencil, size: 13, color: Colors.amber),
+                            const SizedBox(width: 6),
+                            Text('Edited by $editorName', style: GoogleFonts.plusJakartaSans(color: Colors.amber, fontSize: 13, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text('₹${oldAmt.toStringAsFixed(0)} → ₹${newAmt.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12)),
+                        if (editTimeStr.isNotEmpty)
+                          Text(editTimeStr, style: GoogleFonts.plusJakartaSans(color: Colors.white38, fontSize: 11)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
             const SizedBox(height: 16),
             if (widget.fromReports) ...[
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  ElevatedButton.icon(
-                    icon: const Icon(LucideIcons.map, color: Colors.white, size: 18),
-                    label: Text('2D Map', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                    onPressed: () {
-                      Navigator.of(context).pop(); // close bottom sheet
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => HomeScreen(
-                            initialLat: widget.building.lat, 
-                            initialLng: widget.building.lng,
-                            targetBuildingId: widget.building.id,
-                          )
+                  // 2D Map Button
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => HomeScreen(
+                              initialLat: widget.building.lat,
+                              initialLng: widget.building.lng,
+                              targetBuildingId: widget.building.id,
+                            )
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.accent.withValues(alpha: 0.18),
+                              AppColors.accentLight.withValues(alpha: 0.08),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppColors.accent.withValues(alpha: 0.55),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.accent.withValues(alpha: 0.12),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                      );
-                    },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(LucideIcons.map, color: AppColors.accent, size: 17),
+                            const SizedBox(width: 8),
+                            Text(
+                              '2D Map',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  ElevatedButton.icon(
-                    icon: const Icon(LucideIcons.image, color: Colors.white, size: 18),
-                    label: Text('Street View', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.purple, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => StreetViewScreen(lat: widget.building.lat, lon: widget.building.lng)
+                  const SizedBox(width: 12),
+                  // Street View Button
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => StreetViewScreen(
+                              lat: widget.building.lat,
+                              lon: widget.building.lng,
+                            )
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.purple.withValues(alpha: 0.18),
+                              const Color(0xFF7B5EA7).withValues(alpha: 0.08),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppColors.purple.withValues(alpha: 0.55),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.purple.withValues(alpha: 0.12),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                      );
-                    },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(LucideIcons.image, color: AppColors.purple, size: 17),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Street View',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppColors.purple,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -786,6 +963,19 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: donationItemController,
+            enabled: photoBase64 != null,
+            style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+            decoration: InputDecoration(
+              labelText: 'Optional: Donated items (e.g. Rice, Sarees)',
+              labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+              disabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
@@ -795,9 +985,11 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: (isSubmitting || photoBase64 == null || paymentMethod == null) ? null : () async {
+              onPressed: !_isSubmitValid ? null : () async {
                 final amount = double.tryParse(amountController.text) ?? 0.0;
-                if (amount <= 0 && widget.unit.status != 'collected') return;
+                final donation = donationItemController.text.trim();
+                
+                if (amount <= 0 && donation.isEmpty && widget.unit.status != 'collected') return;
 
                 final authUser = ref.read(authStateProvider).value;
                 if (authUser == null) return;
@@ -806,8 +998,10 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                 
                 try {
                   final buildingService = ref.read(buildingServiceProvider);
+                  final profile = ref.read(collectorProfileProvider).value;
+                  final collectorName = profile?.name ?? 'Admin';
                   
-                  if (amount == 0 && widget.unit.status == 'collected') {
+                  if (amount <= 0 && donation.isEmpty && widget.unit.status == 'collected') {
                     await buildingService.resetUnitCollection(
                       buildingId: widget.building.id,
                       unitId: widget.unit.id,
@@ -819,8 +1013,10 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                       unitId: widget.unit.id,
                       amount: amount,
                       collectedBy: authUser.uid,
+                      collectedByName: collectorName,
                       photoBase64: photoBase64,
-                      paymentMethod: paymentMethod!,
+                      paymentMethod: paymentMethod ?? 'Donation',
+                      donationItem: donation,
                     );
                   }
                   if (context.mounted) Navigator.of(context).pop();

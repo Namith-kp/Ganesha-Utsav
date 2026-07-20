@@ -33,6 +33,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   Future<List<Map<String, dynamic>>>? _collectionsFuture;
   Future<List<Map<String, dynamic>>>? _allCollectionsFuture;
   Future<List<Collector>>? _collectorsFuture;
+  Future<List<dynamic>>? _combinedCollectionsFuture;
+  Future<List<dynamic>>? _combinedSpendingsFuture;
   Future<List<Spending>>? _spendingsFuture;
   Future<List<Map<String, dynamic>>>? _tasksFuture;
   TabController? _tabController;
@@ -44,6 +46,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final FocusNode _searchFocusNode = FocusNode();
+  bool _showOnlyDonations = false;
 
   @override
   void initState() {
@@ -95,7 +98,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     _collectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: filterId);
     _allCollectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
     _collectorsFuture = AuthService().getAllCollectors();
+    _combinedCollectionsFuture = Future.wait([_collectionsFuture!, _collectorsFuture!]);
     _spendingsFuture = ref.read(spendingServiceProvider).getSpendings();
+    _combinedSpendingsFuture = Future.wait([
+      _spendingsFuture!,
+      _allCollectionsFuture!,
+      _collectorsFuture!
+    ]);
     _tasksFuture = ref.read(buildingServiceProvider).getPendingCollections();
   }
 
@@ -243,28 +252,96 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           if (profile?.isCollector ?? false) _buildTasksTab(),
         ],
       ),
-      floatingActionButton: (_tabController?.index == 3 && (profile?.canSeeTeamData ?? false))
-          ? FloatingActionButton.extended(
-              onPressed: () async {
-                final didSave = await showAddSpendingBottomSheet(
-                  context,
-                  ref.read(spendingServiceProvider),
-                  profile!.id,
-                  profile.name,
-                );
-                if (didSave == true) {
-                  setState(() {
-                    _loadData();
-                  });
+      floatingActionButton: _buildFloatingActionButton(isAdmin, profile),
+    );
+  }
+
+  Widget? _buildFloatingActionButton(bool isAdmin, dynamic profile) {
+    if (profile == null) return null;
+    final int index = _tabController?.index ?? 0;
+    final bool canSeeTeamData = profile.canSeeTeamData ?? false;
+    
+    if (canSeeTeamData && index == 1 && isAdmin) {
+      // Team Funds Tab (Index 1 when canSeeTeamData is true)
+      return FloatingActionButton.extended(
+        onPressed: _showAddManualMemberDialog,
+        icon: const Icon(LucideIcons.userPlus),
+        label: const Text('Add Member'),
+        backgroundColor: const Color(0xFF3F3D96),
+        foregroundColor: Colors.white,
+      );
+    } else if (canSeeTeamData && index == 2) {
+      // Spendings Tab (Index 2 when canSeeTeamData is true)
+      return FloatingActionButton.extended(
+        onPressed: () async {
+          final didSave = await showAddSpendingBottomSheet(
+            context,
+            ref.read(spendingServiceProvider),
+            profile.id,
+            profile.name,
+          );
+          if (didSave == true) {
+            setState(() => _loadData());
+          }
+        },
+        icon: const Icon(LucideIcons.plus),
+        label: const Text('Add Spending'),
+        backgroundColor: const Color(0xFF5E5CE6),
+        foregroundColor: Colors.white,
+      );
+    }
+    return null;
+  }
+
+  Future<void> _showAddManualMemberDialog() async {
+    final TextEditingController nameController = TextEditingController();
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: Text('Add Team Member', style: GoogleFonts.plusJakartaSans(color: Colors.white)),
+          content: TextField(
+            controller: nameController,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'Name',
+              labelStyle: const TextStyle(color: Colors.white54),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.5))),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty) {
+                  Navigator.pop(context, true);
                 }
               },
-              icon: const Icon(LucideIcons.plus),
-              label: const Text('Add Spending'),
-              backgroundColor: const Color(0xFF5E5CE6),
-              foregroundColor: Colors.white,
-            )
-          : null,
+              child: Text('Add', style: GoogleFonts.plusJakartaSans(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
+
+    if (confirm == true) {
+      try {
+        await AuthService().addManualTeamMember(nameController.text.trim());
+        setState(() => _loadData());
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Member added successfully')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to add member: $e')));
+        }
+      }
+    }
   }
 
   Widget _buildTeamFundsTab(bool isAdmin, String? currentUserId) {
@@ -427,11 +504,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                   ),
                 ),
                 trailing: const Icon(LucideIcons.chevronRight, color: Colors.white54),
-                onTap: () {
-                  showUnitAmountForm(context, ref, building, unit, fromReports: true);
-                  setState(() {
-                    _loadData(); // Reload tasks after updating
-                  });
+                onTap: () async {
+                  await showUnitAmountForm(context, ref, building, unit, fromReports: true);
+                  setState(() => _loadData());
                 },
               ),
             );
@@ -443,11 +518,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
   Widget _buildSpendingsTab(bool isAdmin, String? currentUserId, String? currentUserName) {
     return FutureBuilder(
-      future: Future.wait([
-        _spendingsFuture ?? Future.value([]),
-        _allCollectionsFuture ?? Future.value([]),
-        _collectorsFuture ?? Future.value([])
-      ]),
+      future: _combinedSpendingsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -462,6 +533,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
         double totalCollections = 0;
         for (var data in allCollections) {
+          if (data['isTeamFund'] == true || data['isCorrection'] == true) continue;
           final Unit unit = data['unit'];
           totalCollections += unit.amount;
         }
@@ -650,10 +722,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
   Widget _buildCollectionsTab(bool isAdmin, ScrollController scrollController) {
     return FutureBuilder(
-      future: Future.wait([
-        _collectionsFuture ?? Future.value([]),
-        _collectorsFuture ?? Future.value([]),
-      ]),
+      future: _combinedCollectionsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -678,7 +747,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           }
         }
 
-        List<Map<String, dynamic>> filteredCollections = collections.where((item) {
+        List<Map<String, dynamic>> baseFilteredCollections = collections.where((item) {
            final Unit unit = item['unit'];
            if (_filterType == 'All Time') return true;
            if (unit.collectedAt == null) return false;
@@ -691,9 +760,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
            return false;
         }).toList();
 
+        double totalCollected = 0.0;
+        double todayCollected = 0.0;
+        double totalUpi = 0.0;
+        double totalCash = 0.0;
+
+        for (var item in baseFilteredCollections) {
+          final Unit unit = item['unit'];
+          final bool isCorrection = item['isCorrection'] == true;
+          totalCollected += unit.amount;
+          if (!isCorrection) {
+            if (unit.paymentMethod == 'UPI') {
+              totalUpi += unit.amount;
+            } else {
+              totalCash += unit.amount;
+            }
+          }
+          if (unit.collectedAt != null) {
+            final d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
+            if (d == todayStart) {
+                todayCollected += unit.amount;
+            }
+          }
+        }
+
+        List<Map<String, dynamic>> displayCollections = List.from(baseFilteredCollections);
+
         // Apply search filter
         if (_searchQuery.isNotEmpty) {
-          filteredCollections = filteredCollections.where((item) {
+          displayCollections = displayCollections.where((item) {
             final Unit unit = item['unit'];
             final Building building = item['building'];
             final buildingName = building.name.toLowerCase();
@@ -702,37 +797,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           }).toList();
         }
 
-        double totalCollected = 0.0;
-        double todayCollected = 0.0;
-        double totalUpi = 0.0;
-        double totalCash = 0.0;
-        
+        // Apply donations filter
+        if (_showOnlyDonations) {
+          displayCollections = displayCollections.where((item) {
+            final Unit unit = item['unit'];
+            return unit.donationItem != null && unit.donationItem!.isNotEmpty;
+          }).toList();
+        }
+
         Map<DateTime, List<Map<String, dynamic>>> collectionsByDate = {};
         Map<DateTime, Map<String, double>> dateSummaries = {};
 
-        for (var item in filteredCollections) {
+        for (var item in displayCollections) {
           final Unit unit = item['unit'];
-          totalCollected += unit.amount;
-          if (unit.paymentMethod == 'UPI') {
-            totalUpi += unit.amount;
-          } else {
-            totalCash += unit.amount;
-          }
+          final bool isCorrection = item['isCorrection'] == true;
+          
           if (unit.collectedAt != null) {
             final d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
-            if (d == todayStart) {
-                todayCollected += unit.amount;
-            }
-            
             collectionsByDate.putIfAbsent(d, () => []).add(item);
             dateSummaries.putIfAbsent(d, () => {'UPI': 0.0, 'Cash': 0.0});
-            if (unit.paymentMethod == 'UPI') {
-                dateSummaries[d]!['UPI'] = dateSummaries[d]!['UPI']! + unit.amount;
-            } else {
-                dateSummaries[d]!['Cash'] = dateSummaries[d]!['Cash']! + unit.amount;
+            if (!isCorrection) {
+              if (unit.paymentMethod == 'UPI') {
+                  dateSummaries[d]!['UPI'] = dateSummaries[d]!['UPI']! + unit.amount;
+              } else {
+                  dateSummaries[d]!['Cash'] = dateSummaries[d]!['Cash']! + unit.amount;
+              }
             }
           }
         }
+
         
         final sortedDates = collectionsByDate.keys.toList()..sort((a, b) => b.compareTo(a));
 
@@ -762,7 +855,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         if (_filterType == 'All Time')
                            _buildGradientCard('Total', totalCollected, AppColors.green),
                         if (_filterType != 'All Time')
-                           _buildGradientCard('Transactions', filteredCollections.length.toDouble(), AppColors.accent, isCount: true),
+                           _buildGradientCard('Transactions', baseFilteredCollections.length.toDouble(), AppColors.accent, isCount: true),
                         _buildGradientCard('Total UPI', totalUpi, Colors.purple.shade400),
                         _buildGradientCard('Total Cash', totalCash, AppColors.amber),
                       ],
@@ -907,16 +1000,66 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         ),
                       ),
                     ],
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
+                    // Donations Toggle
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _showOnlyDonations = false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: !_showOnlyDonations ? AppColors.accent : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Center(
+                                  child: Text('All Funds', style: TextStyle(
+                                    color: !_showOnlyDonations ? Colors.white : Colors.white54,
+                                    fontWeight: FontWeight.bold,
+                                  )),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _showOnlyDonations = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: _showOnlyDonations ? AppColors.accent : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Center(
+                                  child: Text('Donations', style: TextStyle(
+                                    color: _showOnlyDonations ? Colors.white : Colors.white54,
+                                    fontWeight: FontWeight.bold,
+                                  )),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
             ),
-            if (collections.isEmpty)
+            if (displayCollections.isEmpty)
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Center(child: Text('No collections yet.', style: TextStyle(color: Colors.white54))),
+                  child: Center(child: Text('No collections found.', style: TextStyle(color: Colors.white54))),
                 ),
               ),
             if (!_showCollectorsView)
@@ -961,9 +1104,98 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                       final item = items[itemIndex];
                       final Unit unit = item['unit'];
                       final Building building = item['building'];
+                      final bool isCorrection = item['isCorrection'] == true;
                       final date = unit.collectedAt;
                       final timeStr = date != null ? '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}' : 'No time';
 
+                      if (isCorrection) {
+                        // ── Delta / correction card — same layout as regular card ──
+                        final double delta = (item['delta'] as num?)?.toDouble() ?? unit.amount;
+                        final double oldAmt = (item['oldAmount'] as num?)?.toDouble() ?? 0.0;
+                        final double newAmt = (item['newAmount'] as num?)?.toDouble() ?? 0.0;
+                        final String editorName = item['correctedByName'] as String? ?? 'Admin';
+                        final bool isIncrease = delta >= 0;
+                        final Color deltaColor = isIncrease ? Colors.greenAccent : Colors.redAccent;
+                        final String deltaSign = isIncrease ? '+' : '';
+                        // Use the real original unit & building for photo thumbnail and tap dialog
+                        final Unit? realUnit = item['realUnit'] as Unit?;
+                        final Building realBuilding = (item['realBuilding'] as Building?) ?? building;
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            color: const Color(0xFF1E1E1E),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                            ),
+                            child: ListTile(
+                              leading: (realUnit?.photoBase64 != null)
+                                  ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(base64Decode(realUnit!.photoBase64!), width: 50, height: 50, fit: BoxFit.cover))
+                                  : const Icon(LucideIcons.imageOff, size: 50, color: Colors.white24),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text('${building.name} - ${unit.unitLabel}',
+                                        style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(LucideIcons.edit2, size: 10, color: Colors.amber),
+                                        const SizedBox(width: 4),
+                                        Text('Edited', style: GoogleFonts.plusJakartaSans(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('₹${oldAmt.toStringAsFixed(0)} → ₹${newAmt.toStringAsFixed(0)}',
+                                        style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontSize: 12)),
+                                    Text('by $editorName · $timeStr',
+                                        style: GoogleFonts.plusJakartaSans(color: Colors.white38, fontSize: 11)),
+                                    if (realUnit?.donationItem != null && realUnit!.donationItem!.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.accent.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text('🎁 ${realUnit.donationItem}', style: GoogleFonts.plusJakartaSans(color: AppColors.accent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              trailing: Text('$deltaSign₹${delta.abs().toStringAsFixed(0)}',
+                                  style: GoogleFonts.plusJakartaSans(color: deltaColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                              onTap: () async {
+                                // Open the real unit's info dialog (same as clicking a regular card)
+                                if (realUnit != null) {
+                                  await showUnitAmountForm(context, ref, realBuilding, realUnit, fromReports: true);
+                                  setState(() => _loadData());
+                                }
+                              },
+                            ),
+                          ),
+                        );
+                      }
+
+
+                      // ── Normal collection card ────────────────────────────
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         child: Card(
@@ -995,17 +1227,42 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                       color: unit.paymentMethod == 'UPI' ? Colors.purple.shade300 : Colors.orange.shade300,
                                       fontWeight: FontWeight.bold,
                                     )),
-                                  )
+                                  ),
+                                  // Show "edited" indicator on the normal card too if it was corrected
+                                  if (unit.originalAmount != null) ...[ 
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text('edited', style: GoogleFonts.plusJakartaSans(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.w600)),
+                                    ),
+                                  ],
+                                  if (unit.donationItem != null && unit.donationItem!.isNotEmpty) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text('🎁 ${unit.donationItem}', style: GoogleFonts.plusJakartaSans(color: AppColors.accent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
                             trailing: Text('₹${unit.amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent)),
-                            onTap: () {
-                              showUnitAmountForm(context, ref, building, unit, fromReports: true);
+                            onTap: () async {
+                              await showUnitAmountForm(context, ref, building, unit, fromReports: true);
+                              setState(() => _loadData());
                             },
                           ),
                         ),
                       );
+
                     },
                     childCount: items.length + 1, // +1 for the header
                   ),

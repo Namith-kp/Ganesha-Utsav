@@ -86,6 +86,19 @@ class AuthService {
     });
   }
 
+  // Add a manual team member (for users who haven't installed the app)
+  Future<void> addManualTeamMember(String name) async {
+    await _firestore.collection('collectors').add({
+      'name': name,
+      'email': '',
+      'photoUrl': null,
+      'role': 'team_member',
+      'isCoreTeamMember': true,
+      'isManualEntry': true,
+      'fundStatus': 'pending',
+    });
+  }
+
   // Update team fund status (Admin only)
   Future<void> updateTeamFundStatus({
     required String uid,

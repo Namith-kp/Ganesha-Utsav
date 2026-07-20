@@ -183,8 +183,10 @@ class BuildingService {
     required String unitId,
     required double amount,
     required String collectedBy,
+    String? collectedByName,   // used when editing to record who made the correction
     String? photoBase64,
     required String paymentMethod,
+    String? donationItem,
   }) async {
     final batch = _firestore.batch();
     final buildingRef = _firestore.collection('buildings').doc(buildingId);
@@ -201,25 +203,61 @@ class BuildingService {
       final String buildingName = buildingDoc.data()!['name'] ?? 'Unknown';
 
       if (wasCollected) {
-        // It's a correction
+        // It's a correction — adjust running total by the delta only
         final double amountDiff = amount - oldAmount;
         
+        if (amountDiff == 0) {
+          // If no amount changed, just update other fields silently without logging a correction
+          final Map<String, dynamic> unitUpdate = {
+            'paymentMethod': paymentMethod,
+            'updatedAt': FieldValue.serverTimestamp(),
+            if (photoBase64 != null) 'photoBase64': photoBase64,
+            if (donationItem != null && donationItem.isNotEmpty) 'donationItem': donationItem,
+          };
+          batch.update(unitRef, unitUpdate);
+          await batch.commit();
+          return;
+        }
+
         batch.update(buildingRef, {
           'totalCollected': FieldValue.increment(amountDiff),
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        // Write correction log
+        // Determine the originalAmount: if this unit was never edited before, 
+        // the current oldAmount IS the original. Otherwise keep the already-stored value.
+        final double? existingOriginal = (unitData['originalAmount'] as num?)?.toDouble();
+        final double originalAmount = existingOriginal ?? oldAmount;
+
+        // Write correction log with editor name for the info page
         final correctionRef = _firestore.collection('corrections').doc();
         batch.set(correctionRef, {
           'unitId': unitId,
+          'buildingId': buildingId,
           'buildingName': buildingName,
           'unitLabel': unitData['unitLabel'],
           'oldAmount': oldAmount,
           'newAmount': amount,
+          'delta': amountDiff,
           'correctedBy': collectedBy,
+          'correctedByName': collectedByName ?? 'Admin',
           'timestamp': FieldValue.serverTimestamp(),
         });
+
+        // Update the unit: new amount, originalAmount (once), but DO NOT touch collectedAt
+        final Map<String, dynamic> unitUpdate = {
+          'amount': amount,
+          'paymentMethod': paymentMethod,
+          'updatedAt': FieldValue.serverTimestamp(),
+          if (photoBase64 != null) 'photoBase64': photoBase64,
+          if (donationItem != null && donationItem.isNotEmpty) 'donationItem': donationItem,
+        };
+        // Only set originalAmount if this is the first edit
+        if (existingOriginal == null) {
+          unitUpdate['originalAmount'] = originalAmount;
+        }
+        batch.update(unitRef, unitUpdate);
+
       } else {
         // First time collection
         batch.update(buildingRef, {
@@ -227,17 +265,18 @@ class BuildingService {
           'totalCollected': FieldValue.increment(amount),
           'updatedAt': FieldValue.serverTimestamp(),
         });
-      }
 
-      batch.update(unitRef, {
-        'status': 'collected',
-        'amount': amount,
-        'collectedBy': collectedBy,
-        'paymentMethod': paymentMethod,
-        'collectedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        if (photoBase64 != null) 'photoBase64': photoBase64,
-      });
+        batch.update(unitRef, {
+          'status': 'collected',
+          'amount': amount,
+          'collectedBy': collectedBy,
+          'paymentMethod': paymentMethod,
+          'collectedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+          if (photoBase64 != null) 'photoBase64': photoBase64,
+          if (donationItem != null && donationItem.isNotEmpty) 'donationItem': donationItem,
+        });
+      }
 
       await batch.commit();
     }
@@ -311,14 +350,28 @@ class BuildingService {
 
   // Get detailed collections for the reports UI
   Future<List<Map<String, dynamic>>> getDetailedCollections({String? filterCollectorId}) async {
-    // Fetch buildings
-    final buildingsSnapshot = await _firestore.collection('buildings').get();
-    
-    // Fetch team funds
-    final collectorsSnapshot = await _firestore.collection('collectors').get();
+    // Fetch buildings, corrections, and collectors in parallel
+    final results = await Future.wait([
+      _firestore.collection('buildings').get(),
+      _firestore.collection('corrections').orderBy('timestamp', descending: true).get(),
+      _firestore.collection('collectors').get(),
+    ]);
+
+    final buildingsSnapshot = results[0] as QuerySnapshot;
+    final correctionsSnapshot = results[1] as QuerySnapshot;
+    final collectorsSnapshot = results[2] as QuerySnapshot;
+
+    // Build a name lookup map for collectors
+    final collectorNames = <String, String>{};
+    for (var doc in collectorsSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      collectorNames[doc.id] = data['name'] as String? ?? 'Unknown';
+    }
+
+    // ── Team funds ──────────────────────────────────────────────────────────
     final teamFundsData = <Map<String, dynamic>>[];
     for (var doc in collectorsSnapshot.docs) {
-      final data = doc.data();
+      final data = doc.data() as Map<String, dynamic>;
       final role = data['role'] ?? 'viewer';
       final isCore = data['isCoreTeamMember'] ?? false;
       if (role == 'team_member' || isCore) {
@@ -356,18 +409,19 @@ class BuildingService {
         }
       }
     }
-    
-    // Fetch units for all buildings in parallel
+
+    // ── Units ────────────────────────────────────────────────────────────────
     final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
-      final building = Building.fromMap(buildingDoc.data(), buildingDoc.id);
+      final building = Building.fromMap(buildingDoc.data() as Map<String, dynamic>, buildingDoc.id);
       final unitsSnapshot = await buildingDoc.reference.collection('units').get();
       
       final List<Map<String, dynamic>> buildingCollections = [];
       for (final unitDoc in unitsSnapshot.docs) {
-        final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
+        final unit = Unit.fromMap(unitDoc.data() as Map<String, dynamic>, unitDoc.id);
         if (unit.status == 'collected') {
           if (filterCollectorId != null && unit.collectedBy != filterCollectorId) continue;
           
+          // If the unit has been edited, show it at its original date with originalAmount
           buildingCollections.add({
             'unit': unit,
             'building': building,
@@ -377,11 +431,81 @@ class BuildingService {
       return buildingCollections;
     });
 
-    final results = await Future.wait(unitFutures);
-    final collections = results.expand((x) => x).toList();
+    final unitResults = await Future.wait(unitFutures);
+    final collections = unitResults.expand((x) => x).toList();
     collections.addAll(teamFundsData);
-    
-    // Sort descending by date
+
+    // ── Correction delta entries ─────────────────────────────────────────────
+    // Build lookups: unitId -> building & unit (from already-fetched real units)
+    final buildingByUnitId = <String, Building>{};
+    final unitById = <String, Unit>{};
+    for (var entry in collections) {
+      final unit = entry['unit'] as Unit;
+      final building = entry['building'] as Building;
+      if (building.id != 'team_funds') {
+        buildingByUnitId[unit.id] = building;
+        unitById[unit.id] = unit;
+      }
+    }
+
+    for (var corrDoc in correctionsSnapshot.docs) {
+      final data = corrDoc.data() as Map<String, dynamic>;
+      final String unitId = data['unitId'] as String? ?? '';
+      final String buildingId = data['buildingId'] as String? ?? '';
+      final double delta = (data['delta'] as num?)?.toDouble() ?? 0.0;
+      final double oldAmount = (data['oldAmount'] as num?)?.toDouble() ?? 0.0;
+      final double newAmount = (data['newAmount'] as num?)?.toDouble() ?? 0.0;
+      final String correctedBy = data['correctedBy'] as String? ?? '';
+      final String correctedByName = data['correctedByName'] as String? ?? collectorNames[correctedBy] ?? 'Admin';
+      final DateTime? correctionTime = (data['timestamp'] as Timestamp?)?.toDate();
+      final String buildingName = data['buildingName'] as String? ?? 'Unknown';
+      final String unitLabel = data['unitLabel'] as String? ?? '';
+
+      // Skip if filtering by collector (corrections are admin-only, always shown to admins)
+      if (filterCollectorId != null) continue;
+
+      // Look up the original real unit so the card can show its photo and open
+      // the correct info dialog on tap.
+      final realUnit = unitById[unitId];
+      final realBuilding = buildingByUnitId[unitId];
+
+      // Build a placeholder building (fallback when real unit not in scope)
+      final correctionBuilding = realBuilding ?? Building(
+        id: buildingId,
+        name: buildingName,
+        lat: 0, lng: 0, type: 'house',
+        totalUnits: 1, collectedCount: 1,
+        totalCollected: newAmount,
+        createdBy: 'system', createdAt: DateTime.now(),
+      );
+
+      // A virtual Unit that represents the DELTA — carries original photo for thumbnail
+      final deltaUnit = Unit(
+        id: '${unitId}_correction_${corrDoc.id}',
+        buildingId: buildingId,
+        unitLabel: unitLabel,
+        status: 'collected',
+        amount: delta,           // positive or negative delta
+        collectedAt: correctionTime,
+        updatedAt: correctionTime,
+        originalAmount: oldAmount,
+        photoBase64: realUnit?.photoBase64, // reuse original unit's thumbnail
+      );
+
+      collections.add({
+        'unit': deltaUnit,
+        'building': correctionBuilding,
+        'isCorrection': true,
+        'realUnit': realUnit,       // original unit for tap dialog
+        'realBuilding': realBuilding ?? correctionBuilding,
+        'correctedByName': correctedByName,
+        'oldAmount': oldAmount,
+        'newAmount': newAmount,
+        'delta': delta,
+      });
+    }
+
+    // Sort descending by date (collectedAt for normal, correctionTime for deltas)
     collections.sort((a, b) {
       final dateA = (a['unit'] as Unit).collectedAt;
       final dateB = (b['unit'] as Unit).collectedAt;
