@@ -15,13 +15,15 @@ final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final collectorProfile = ref.watch(collectorProfileProvider);
-
-  return GoRouter(
+  // Keep one router for the lifetime of the app. Recreating GoRouter when
+  // Firebase/profile data resolves can briefly detach the shell's child route.
+  final router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) {
+      final authState = ref.read(authStateProvider);
+      final collectorProfile = ref.read(collectorProfileProvider);
+
       // If the auth state is still loading, don't redirect yet
       if (authState.isLoading) return null;
 
@@ -68,7 +70,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) {
-          return MainScaffold(child: child);
+          return MainScaffold(
+            location: state.matchedLocation,
+            child: child,
+          );
         },
         routes: [
           GoRoute(
@@ -103,4 +108,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // Re-evaluate access rules as auth/profile data changes without replacing the
+  // Navigator or the currently displayed route.
+  ref.listen(authStateProvider, (_, __) => router.refresh());
+  ref.listen(collectorProfileProvider, (_, __) => router.refresh());
+  ref.onDispose(router.dispose);
+
+  return router;
 });

@@ -332,6 +332,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
   bool isEditing = false;
   late TextEditingController amountController;
   late TextEditingController donationItemController;
+  late TextEditingController phoneController;
   bool isSubmitting = false;
   String? photoBase64;
   String? paymentMethod;
@@ -342,8 +343,10 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
     final isAlreadyCollected = widget.unit.status == 'collected';
     amountController = TextEditingController(text: isAlreadyCollected ? widget.unit.amount.toString() : '');
     donationItemController = TextEditingController(text: widget.unit.donationItem ?? '');
+    phoneController = TextEditingController(text: widget.unit.phoneNumber ?? '');
     amountController.addListener(_onFieldChanged);
     donationItemController.addListener(_onFieldChanged);
+    phoneController.addListener(_onFieldChanged);
     photoBase64 = widget.unit.photoBase64;
     paymentMethod = widget.unit.paymentMethod;
   }
@@ -356,8 +359,10 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
   void dispose() {
     amountController.removeListener(_onFieldChanged);
     donationItemController.removeListener(_onFieldChanged);
+    phoneController.removeListener(_onFieldChanged);
     amountController.dispose();
     donationItemController.dispose();
+    phoneController.dispose();
     super.dispose();
   }
 
@@ -544,6 +549,31 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                     const Icon(LucideIcons.gift, size: 16, color: AppColors.accent),
                     const SizedBox(width: 8),
                     Flexible(child: Text('Donated: ${widget.unit.donationItem!}', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.accent), textAlign: TextAlign.center)),
+                  ],
+                ),
+              ),
+            ],
+            if (widget.unit.phoneNumber != null && widget.unit.phoneNumber!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.greenPin.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.greenPin.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(LucideIcons.phone, size: 16, color: AppColors.greenPin),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Phone: ${widget.unit.phoneNumber!}',
+                        style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.greenPin),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -999,11 +1029,25 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
           ),
           const SizedBox(height: 12),
           TextField(
+            controller: phoneController,
+            keyboardType: TextInputType.phone,
+            enabled: photoBase64 != null,
+            style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+            decoration: InputDecoration(
+              labelText: 'Optional: Phone number',
+              labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
+              disabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
             controller: donationItemController,
             enabled: photoBase64 != null,
             style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
             decoration: InputDecoration(
-              labelText: 'Optional: Donated items (e.g. Rice, Sarees)',
+              labelText: 'Optional: Sponsoring items (e.g. Rice, Sarees)',
               labelStyle: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary),
               enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.borderLight), borderRadius: BorderRadius.circular(8)),
               focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent), borderRadius: BorderRadius.circular(8)),
@@ -1022,6 +1066,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
               onPressed: !_isSubmitValid ? null : () async {
                 final amount = double.tryParse(amountController.text) ?? 0.0;
                 final donation = donationItemController.text.trim();
+                final phone = phoneController.text.trim();
                 
                 if (amount <= 0 && donation.isEmpty && widget.unit.status != 'collected') return;
 
@@ -1034,6 +1079,26 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                   final buildingService = ref.read(buildingServiceProvider);
                   final profile = ref.read(collectorProfileProvider).value;
                   final collectorName = profile?.name ?? 'Admin';
+
+                  if (phone.isNotEmpty) {
+                    final isDuplicate = await buildingService.isPhoneNumberInUse(
+                      phone,
+                      excludeBuildingId: widget.building.id,
+                      excludeUnitId: widget.unit.id,
+                    );
+                    if (isDuplicate) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Phone number already exists.', style: GoogleFonts.plusJakartaSans(color: Colors.white)),
+                            backgroundColor: AppColors.amber,
+                          ),
+                        );
+                      }
+                      setState(() => isSubmitting = false);
+                      return;
+                    }
+                  }
                   
                   if (amount <= 0 && donation.isEmpty && widget.unit.status == 'collected') {
                     await buildingService.resetUnitCollection(
@@ -1051,6 +1116,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                       photoBase64: photoBase64,
                       paymentMethod: paymentMethod ?? 'Donation',
                       donationItem: donation,
+                      phoneNumber: phone,
                     );
                   }
                   if (context.mounted) Navigator.of(context).pop();

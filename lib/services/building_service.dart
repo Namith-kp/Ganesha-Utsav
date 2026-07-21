@@ -5,6 +5,41 @@ import '../models/unit.dart';
 class BuildingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  String _normalizePhoneNumber(String value) {
+    return value.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  Future<bool> isPhoneNumberInUse(
+    String phoneNumber, {
+    String? excludeBuildingId,
+    String? excludeUnitId,
+  }) async {
+    final normalized = _normalizePhoneNumber(phoneNumber.trim());
+    if (normalized.isEmpty) return false;
+
+    try {
+      final snapshot = await _firestore
+          .collectionGroup('units')
+          .where('phoneNumberNormalized', isEqualTo: normalized)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final parentBuildingId = doc.reference.parent.parent?.id;
+        if (parentBuildingId == excludeBuildingId && doc.id == excludeUnitId) {
+          continue;
+        }
+        return true;
+      }
+    } on FirebaseException catch (e) {
+      if (e.code == 'failed-precondition') {
+        return false;
+      }
+      rethrow;
+    }
+
+    return false;
+  }
+
   // Stream all buildings for the map
   Stream<List<Building>> streamBuildings() {
     return _firestore.collection('buildings').snapshots().map((snapshot) {
@@ -187,10 +222,12 @@ class BuildingService {
     String? photoBase64,
     required String paymentMethod,
     String? donationItem,
+    String? phoneNumber,
   }) async {
     final batch = _firestore.batch();
     final buildingRef = _firestore.collection('buildings').doc(buildingId);
     final unitRef = buildingRef.collection('units').doc(unitId);
+    final normalizedPhone = phoneNumber == null ? null : _normalizePhoneNumber(phoneNumber);
 
     // Get current unit and building to see if it's an edit
     final unitDoc = await unitRef.get();
@@ -208,11 +245,18 @@ class BuildingService {
         
         if (amountDiff == 0) {
           // If no amount changed, just update other fields silently without logging a correction
+          final Map<String, dynamic> phoneFields = {};
+          if (phoneNumber != null) {
+            phoneFields['phoneNumber'] = phoneNumber.isNotEmpty ? phoneNumber : FieldValue.delete();
+            phoneFields['phoneNumberNormalized'] =
+                normalizedPhone!.isNotEmpty ? normalizedPhone : FieldValue.delete();
+          }
           final Map<String, dynamic> unitUpdate = {
             'paymentMethod': paymentMethod,
             'updatedAt': FieldValue.serverTimestamp(),
             if (photoBase64 != null) 'photoBase64': photoBase64,
             if (donationItem != null && donationItem.isNotEmpty) 'donationItem': donationItem,
+            ...phoneFields,
           };
           batch.update(unitRef, unitUpdate);
           await batch.commit();
@@ -245,12 +289,19 @@ class BuildingService {
         });
 
         // Update the unit: new amount, originalAmount (once), but DO NOT touch collectedAt
+        final Map<String, dynamic> phoneFields = {};
+        if (phoneNumber != null) {
+          phoneFields['phoneNumber'] = phoneNumber.isNotEmpty ? phoneNumber : FieldValue.delete();
+          phoneFields['phoneNumberNormalized'] =
+              normalizedPhone!.isNotEmpty ? normalizedPhone : FieldValue.delete();
+        }
         final Map<String, dynamic> unitUpdate = {
           'amount': amount,
           'paymentMethod': paymentMethod,
           'updatedAt': FieldValue.serverTimestamp(),
           if (photoBase64 != null) 'photoBase64': photoBase64,
           if (donationItem != null && donationItem.isNotEmpty) 'donationItem': donationItem,
+          ...phoneFields,
         };
         // Only set originalAmount if this is the first edit
         if (existingOriginal == null) {
@@ -266,6 +317,12 @@ class BuildingService {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
+        final Map<String, dynamic> phoneFields = {};
+        if (phoneNumber != null) {
+          phoneFields['phoneNumber'] = phoneNumber.isNotEmpty ? phoneNumber : FieldValue.delete();
+          phoneFields['phoneNumberNormalized'] =
+              normalizedPhone!.isNotEmpty ? normalizedPhone : FieldValue.delete();
+        }
         batch.update(unitRef, {
           'status': 'collected',
           'amount': amount,
@@ -275,6 +332,7 @@ class BuildingService {
           'updatedAt': FieldValue.serverTimestamp(),
           if (photoBase64 != null) 'photoBase64': photoBase64,
           if (donationItem != null && donationItem.isNotEmpty) 'donationItem': donationItem,
+          ...phoneFields,
         });
       }
 
@@ -606,6 +664,8 @@ class BuildingService {
       'paymentMethod': null,
       'collectedAt': null,
       'photoBase64': null,
+      'phoneNumber': null,
+      'phoneNumberNormalized': null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
 

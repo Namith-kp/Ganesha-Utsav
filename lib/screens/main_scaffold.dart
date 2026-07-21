@@ -8,8 +8,13 @@ import '../main.dart';
 
 class MainScaffold extends ConsumerWidget {
   final Widget child;
+  final String location;
 
-  const MainScaffold({super.key, required this.child});
+  const MainScaffold({
+    super.key,
+    required this.child,
+    required this.location,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -94,22 +99,16 @@ class MainScaffold extends ConsumerWidget {
       route: '/profile',
     ));
 
-    // Determine current index based on route
-    final location = GoRouterState.of(context).matchedLocation;
-    
-    // Find the closest matching route for nested paths
-    int currentIndex = items.indexWhere((item) => location.startsWith(item.route));
-    if (currentIndex == -1) {
-      // Fallback
-      if (location == '/') currentIndex = 0;
-      else currentIndex = items.length - 1; // Default to profile if unmatched? No, better 0
-      if (currentIndex < 0) currentIndex = 0;
-    }
+    // Determine current index based on route without matching "/" against every path.
+    int currentIndex = items.indexWhere((item) {
+      if (item.route == '/') {
+        return location == '/';
+      }
+      return location == item.route || location.startsWith('${item.route}/');
+    });
 
-    // Refine matching for exact root
-    if (location == '/') {
-      currentIndex = items.indexWhere((item) => item.route == '/');
-      if (currentIndex == -1) currentIndex = 0;
+    if (currentIndex == -1) {
+      currentIndex = 0;
     }
 
     return Scaffold(

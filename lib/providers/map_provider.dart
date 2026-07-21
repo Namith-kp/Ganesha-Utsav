@@ -64,8 +64,10 @@ final liveLocationProvider = StreamProvider<Position?>((ref) async* {
   // Then yield continuous stream
   yield* Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 0, // Updates on every possible accuracy improvement
+      accuracy: LocationAccuracy.high,
+      // Avoid rebuilding the location marker for GPS jitter while the map is
+      // being panned or zoomed.
+      distanceFilter: 15,
     ),
   );
 });
@@ -74,6 +76,11 @@ final liveLocationProvider = StreamProvider<Position?>((ref) async* {
 final currentLocationProvider = FutureProvider<Position?>((ref) async {
   final hasPermission = await ref.watch(locationPermissionProvider.future);
   if (!hasPermission) return null;
+
+  final lastKnown = await Geolocator.getLastKnownPosition();
+  if (lastKnown != null) {
+    return lastKnown;
+  }
 
   return await Geolocator.getCurrentPosition(
     desiredAccuracy: LocationAccuracy.bestForNavigation,

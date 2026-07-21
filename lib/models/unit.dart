@@ -13,6 +13,7 @@ class Unit {
   final DateTime? updatedAt;
   final double? originalAmount; // set on first admin edit, never changed again
   final String? donationItem; // for non-monetary donations like Rice, Sarees
+  final String? phoneNumber; // optional household/contact phone number
 
   Unit({
     required this.id,
@@ -27,6 +28,7 @@ class Unit {
     this.updatedAt,
     this.originalAmount,
     this.donationItem,
+    this.phoneNumber,
   });
 
   factory Unit.fromMap(Map<String, dynamic> map, String id) {
@@ -43,6 +45,7 @@ class Unit {
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
       originalAmount: (map['originalAmount'] as num?)?.toDouble(),
       donationItem: map['donationItem'] as String?,
+      phoneNumber: map['phoneNumber'] as String?,
     );
   }
 
@@ -59,6 +62,7 @@ class Unit {
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
       if (originalAmount != null) 'originalAmount': originalAmount,
       if (donationItem != null && donationItem!.isNotEmpty) 'donationItem': donationItem,
+      if (phoneNumber != null && phoneNumber!.isNotEmpty) 'phoneNumber': phoneNumber,
     };
   }
 }

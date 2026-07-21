@@ -939,7 +939,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Center(
-                                  child: Text('Donations', style: TextStyle(
+                                  child: Text('Sponsorships', style: TextStyle(
                                     color: _showOnlyDonations ? Colors.white : Colors.white54,
                                     fontWeight: FontWeight.bold,
                                   )),

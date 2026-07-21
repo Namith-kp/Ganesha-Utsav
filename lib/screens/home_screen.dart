@@ -61,11 +61,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
   Widget build(BuildContext context) {
     final authService = ref.read(authServiceProvider);
     final locationAsync = ref.watch(currentLocationProvider);
-    final liveLocationAsync = ref.watch(liveLocationProvider);
-    final buildingsAsync = ref.watch(buildingsProvider);
     final collectorAsync = ref.watch(collectorProfileProvider);
     final profile = collectorAsync.value;
     final canCreate = profile?.canCreate ?? false;
+    final canSeeAllTags = profile?.canSeeAllTags ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -139,6 +138,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
               FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
+                  backgroundColor: AppColors.bgBase,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                    enableMultiFingerGestureRace: true,
+                    pinchZoomThreshold: 0.1,
+                    pinchMoveThreshold: 8,
+                  ),
                   initialCenter: (widget.initialLat != null && widget.initialLng != null)
                       ? LatLng(widget.initialLat!, widget.initialLng!)
                       : initialCenter,
@@ -180,35 +186,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                   TileLayer(
                     urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
                     userAgentPackageName: 'com.Dcross.ganeshtracker',
+                    // Keep nearby tiles in memory and skip per-tile fade
+                    // animations so panning and zooming stay responsive.
+                    keepBuffer: 4,
+                    panBuffer: 1,
+                    tileDisplay: const TileDisplay.instantaneous(),
                   ),
-                  MarkerLayer(
-                    markers: buildingsAsync.when(
-                      data: (buildings) => _buildMarkers(context, ref, buildings),
-                      loading: () => [],
-                      error: (err, stack) => [],
-                    ),
+                  _BuildingsMarkerLayer(
+                    selectedFilter: _selectedFilter,
+                    targetBuildingId: widget.targetBuildingId,
+                    canSeeAllTags: canSeeAllTags,
                   ),
-                  MarkerLayer(
-                    markers: liveLocationAsync.maybeWhen(
-                      data: (pos) => pos == null ? [] : [
-                        Marker(
-                          point: LatLng(pos.latitude, pos.longitude),
-                          width: 32,
-                          height: 32,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.accent,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: AppColors.bgBase, width: 3),
-                              boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black54)],
-                            ),
-                            child: const Icon(LucideIcons.user, color: Colors.white, size: 18),
-                          ),
-                        ),
-                      ],
-                      orElse: () => [],
-                    ),
-                  ),
+                  const _LiveLocationMarkerLayer(),
                 ],
               ),
               Positioned(
@@ -265,9 +254,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     );
   }
 
-  List<Marker> _buildMarkers(BuildContext context, WidgetRef ref, List<Building> buildings) {
-    final profile = ref.read(collectorProfileProvider).value;
-    final canSeeAllTags = profile?.canSeeAllTags ?? false;
+  List<Marker> _buildMarkers(
+    BuildContext context,
+    WidgetRef ref,
+    List<Building> buildings,
+    bool canSeeAllTags,
+  ) {
 
     var filteredBuildings = buildings.where((building) {
       if (widget.targetBuildingId != null) {
@@ -294,14 +286,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
 
       return Marker(
         point: LatLng(building.lat, building.lng),
-        width: 80,
-        height: 80,
+        width: 44,
+        height: 44,
         child: GestureDetector(
           onTap: () {
             _animatedMapMove(LatLng(building.lat, building.lng), 19.5);
             showCollectionBottomSheet(context, ref, building);
           },
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (building.collectedCount > 0 && building.collectedCount < building.totalUnits)
                 Container(
@@ -323,7 +316,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     ),
                   ),
                 ),
-              Icon(Icons.location_on, color: pinColor, size: 36),
+              const SizedBox(height: 3),
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: pinColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black54, blurRadius: 4),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -331,4 +336,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     }).toList();
   }
 
+}
+
+class _BuildingsMarkerLayer extends ConsumerWidget {
+  final String selectedFilter;
+  final String? targetBuildingId;
+  final bool canSeeAllTags;
+
+  const _BuildingsMarkerLayer({
+    required this.selectedFilter,
+    required this.targetBuildingId,
+    required this.canSeeAllTags,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final buildingsAsync = ref.watch(buildingsProvider);
+
+    return MarkerLayer(
+      markers: buildingsAsync.when(
+        data: (buildings) {
+          final state = context.findAncestorStateOfType<_HomeScreenState>();
+          if (state == null) return const <Marker>[];
+
+          return state._buildMarkers(
+            context,
+            ref,
+            buildings,
+            canSeeAllTags,
+          );
+        },
+        loading: () => const <Marker>[],
+        error: (err, stack) => const <Marker>[],
+      ),
+    );
+  }
+}
+
+class _LiveLocationMarkerLayer extends ConsumerWidget {
+  const _LiveLocationMarkerLayer();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final liveLocationAsync = ref.watch(liveLocationProvider);
+
+    return MarkerLayer(
+      markers: liveLocationAsync.maybeWhen(
+        data: (pos) => pos == null
+            ? const <Marker>[]
+            : [
+                Marker(
+                  point: LatLng(pos.latitude, pos.longitude),
+                  width: 32,
+                  height: 32,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.bgBase, width: 3),
+                      boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black54)],
+                    ),
+                    child: const Icon(LucideIcons.user, color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+        orElse: () => const <Marker>[],
+      ),
+    );
+  }
 }
