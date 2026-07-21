@@ -145,7 +145,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           return const Center(child: CircularProgressIndicator(color: AppColors.accent));
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Error: \${snapshot.error}', style: const TextStyle(color: AppColors.crimson)));
+          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: AppColors.crimson)));
         }
 
         final collections = snapshot.data ?? [];
@@ -167,10 +167,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Total Collected', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-                    Text('₹\${totalAmount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.green)),
+                    Expanded(
+                      child: Text(
+                        'Total Collected',
+                        style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text('₹${totalAmount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.green)),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -213,9 +225,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           foregroundColor: AppColors.green,
           child: Icon(methodIcon, size: 20),
         ),
-        title: Text('\${building.name} - \${unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+        title: Text(
+          '${building.name} - ${unit.unitLabel}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+        ),
         subtitle: Text(dateStr, style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 13)),
-        trailing: Text('₹\${unit.amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
+        trailing: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('₹${unit.amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
+        ),
       ),
     );
   }

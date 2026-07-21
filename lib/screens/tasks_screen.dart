@@ -17,6 +17,7 @@ class TasksScreen extends ConsumerStatefulWidget {
 
 class _TasksScreenState extends ConsumerState<TasksScreen> {
   Future<List<Map<String, dynamic>>>? _tasksFuture;
+  List<Map<String, dynamic>>? _cachedTasks;
 
   @override
   void initState() {
@@ -25,7 +26,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   }
 
   void _loadData() {
-    _tasksFuture = ref.read(buildingServiceProvider).getPendingCollections();
+    _tasksFuture = ref.read(buildingServiceProvider).getPendingCollections().then((data) {
+      if (mounted) setState(() => _cachedTasks = data);
+      return data;
+    });
   }
 
   @override
@@ -52,7 +56,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
             return const Center(child: CircularProgressIndicator(color: AppColors.accent));
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Error: \${snapshot.error}', style: const TextStyle(color: Colors.red)));
+            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
           }
           
           final tasks = snapshot.data ?? [];
@@ -89,7 +93,12 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                       color: Colors.orange,
                     ),
                   ),
-                  title: Text('\${building.name} - \${unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                  title: Text(
+                    '${building.name} - ${unit.unitLabel}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 4.0),
                     child: Row(

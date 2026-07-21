@@ -95,9 +95,21 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                      backgroundImage: collector.photoUrl != null ? NetworkImage(collector.photoUrl!) : null,
                      child: collector.photoUrl == null ? const Icon(LucideIcons.user) : null,
                    ),
-                   title: Text(collector.name, style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-                   subtitle: Text('Rank #\${index + 1}', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
-                   trailing: Text('₹\${total.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
+                   title: Text(
+                     collector.name,
+                     maxLines: 1,
+                     overflow: TextOverflow.ellipsis,
+                     style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                   ),
+                   subtitle: Text('Rank #${index + 1}', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
+                   trailing: ConstrainedBox(
+                     constraints: const BoxConstraints(maxWidth: 120),
+                     child: FittedBox(
+                       fit: BoxFit.scaleDown,
+                       alignment: Alignment.centerRight,
+                       child: Text('₹${total.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
+                     ),
+                   ),
                    onTap: isAdmin ? () {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
                         collectorName: collector.name,

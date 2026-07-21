@@ -36,6 +36,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   Future<List<dynamic>>? _combinedCollectionsFuture;
   Future<List<dynamic>>? _combinedSpendingsFuture;
   Future<List<Spending>>? _spendingsFuture;
+  List<dynamic>? _cachedCombinedCollections;
+  List<dynamic>? _cachedCombinedSpendings;
+  List<Collector>? _cachedCollectors;
 
   TabController? _tabController;
   final ScrollController _collectionsScrollController = ScrollController();
@@ -95,14 +98,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     
     _collectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: filterId);
     _allCollectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
-    _collectorsFuture = AuthService().getAllCollectors();
-    _combinedCollectionsFuture = Future.wait([_collectionsFuture!, _collectorsFuture!]);
+    _collectorsFuture = AuthService().getAllCollectors().then((data) {
+      if (mounted) setState(() => _cachedCollectors = data);
+      return data;
+    });
+    _combinedCollectionsFuture = Future.wait([_collectionsFuture!, _collectorsFuture!]).then((data) {
+      if (mounted) setState(() => _cachedCombinedCollections = data);
+      return data;
+    });
     _spendingsFuture = ref.read(spendingServiceProvider).getSpendings();
     _combinedSpendingsFuture = Future.wait([
       _spendingsFuture!,
       _allCollectionsFuture!,
       _collectorsFuture!
-    ]);
+    ]).then((data) {
+      if (mounted) setState(() => _cachedCombinedSpendings = data);
+      return data;
+    });
   }
 
   Future<void> _confirmDeleteSpending(Spending spending) async {
@@ -341,14 +353,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     return FutureBuilder<List<Collector>>(
       future: _collectorsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && _cachedCollectors == null) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
+        if (snapshot.hasError && _cachedCollectors == null) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
         
-        final collectors = snapshot.data ?? [];
+        final collectors = snapshot.data ?? _cachedCollectors ?? [];
         final teamMembers = collectors.where((c) => c.role == 'team_member' || c.isCoreTeamMember).toList();
         
         if (teamMembers.isEmpty) {
@@ -444,16 +456,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     return FutureBuilder(
       future: _combinedSpendingsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && _cachedCombinedSpendings == null) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
+        if (snapshot.hasError && _cachedCombinedSpendings == null) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        final spendings = (snapshot.data?[0] as List<Spending>?) ?? [];
-        final allCollections = (snapshot.data?[1] as List<Map<String, dynamic>>?) ?? [];
-        final allCollectors = (snapshot.data?[2] as List<Collector>?) ?? [];
+        final combinedData = snapshot.data ?? _cachedCombinedSpendings;
+        final spendings = (combinedData?[0] as List<Spending>?) ?? [];
+        final allCollections = (combinedData?[1] as List<Map<String, dynamic>>?) ?? [];
+        final allCollectors = (combinedData?[2] as List<Collector>?) ?? [];
 
         double totalCollections = 0;
         for (var data in allCollections) {
@@ -482,14 +495,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           padding: const EdgeInsets.all(16),
           children: [
             if (!isViewer) ...[
-              Row(
-                children: [
-                  Expanded(child: _buildMetricCard('Total Collections', '₹${totalCollections.toStringAsFixed(0)}', LucideIcons.trendingUp, Colors.greenAccent)),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildMetricCard('Total Funds', '₹${totalTeamFunds.toStringAsFixed(0)}', LucideIcons.users, Colors.blueAccent)),
-                ],
-              ),
-              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(child: _buildMetricCard('Total Spendings', '₹${totalSpendings.toStringAsFixed(0)}', LucideIcons.trendingDown, Colors.redAccent)),
@@ -558,7 +563,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 ),
               ),
             if (spendings.isEmpty)
-              const Center(child: Text('No spendings recorded yet.', style: TextStyle(color: Colors.white54)))
+              Center(child: Text('No spendings recorded yet.', style: GoogleFonts.plusJakartaSans(color: Colors.white54)))
             else
               ...spendings.map((spending) => _SpendingCard(
                 spending: spending,
@@ -624,15 +629,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     return FutureBuilder(
       future: _combinedCollectionsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && _cachedCombinedCollections == null) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
+        if (snapshot.hasError && _cachedCombinedCollections == null) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
         
-        final collections = (snapshot.data?[0] as List<Map<String, dynamic>>?) ?? [];
-        final collectors = (snapshot.data?[1] as List<Collector>?) ?? [];
+        final combinedData = snapshot.data ?? _cachedCombinedCollections;
+        final collections = (combinedData?[0] as List<Map<String, dynamic>>?) ?? [];
+        final collectors = (combinedData?[1] as List<Collector>?) ?? [];
         
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
@@ -738,44 +744,46 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Stats', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: 1.5,
-                      children: [
-                        if (_filterType == 'All Time')
-                           _buildGradientCard('Today', todayCollected, AppColors.accent),
-                        if (_filterType != 'All Time')
-                           _buildGradientCard('Total', totalCollected, AppColors.green),
-                        if (_filterType == 'All Time')
-                           _buildGradientCard('Total', totalCollected, AppColors.green),
-                        if (_filterType != 'All Time')
-                           _buildGradientCard('Transactions', baseFilteredCollections.length.toDouble(), AppColors.accent, isCount: true),
-                        _buildGradientCard('Total UPI', totalUpi, Colors.purple.shade400),
-                        _buildGradientCard('Total Cash', totalCash, AppColors.amber),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    const Text('Last 7 Days', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 16),
-                    Card(
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                    if (!isViewer) ...[
+                      Row(
+                        children: [
+                          if (_filterType == 'All Time')
+                            Expanded(child: _buildMetricCard('Today', '₹${todayCollected.toStringAsFixed(0)}', LucideIcons.calendar, AppColors.accent)),
+                          if (_filterType != 'All Time')
+                            Expanded(child: _buildMetricCard('Total', '₹${totalCollected.toStringAsFixed(0)}', LucideIcons.trendingUp, AppColors.green)),
+                          const SizedBox(width: 12),
+                          if (_filterType == 'All Time')
+                            Expanded(child: _buildMetricCard('Total', '₹${totalCollected.toStringAsFixed(0)}', LucideIcons.trendingUp, AppColors.green))
+                          else
+                            Expanded(child: _buildMetricCard('Transactions', baseFilteredCollections.length.toString(), LucideIcons.receipt, AppColors.accent)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: _buildMetricCard('Total UPI', '₹${totalUpi.toStringAsFixed(0)}', LucideIcons.smartphone, AppColors.purple)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildMetricCard('Total Cash', '₹${totalCash.toStringAsFixed(0)}', LucideIcons.banknote, AppColors.amber)),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Container(
+                        height: 200,
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                        ),
                         child: _buildChart(dailyTotalsMap),
                       ),
-                    ),
-                    const SizedBox(height: 24),
+                      const SizedBox(height: 24),
+                    ],
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Collections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                        Text('Collections', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
                         Row(
                           children: [
                             if (isAdmin)
@@ -795,7 +803,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                       children: [
                                         Icon(LucideIcons.users, size: 14, color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70),
                                         const SizedBox(width: 6),
-                                        Text('By Collector', style: TextStyle(color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+                                        Text('By Collector', style: GoogleFonts.plusJakartaSans(color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
                                       ],
                                     ),
                                   ),
@@ -813,12 +821,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                   value: _filterType,
                                   dropdownColor: const Color(0xFF1E1E1E),
                                   icon: Icon(LucideIcons.filter, size: 16, color: Colors.blue.shade400),
-                                  style: TextStyle(color: Colors.blue.shade300, fontWeight: FontWeight.bold, fontSize: 14),
+                                  style: GoogleFonts.plusJakartaSans(color: Colors.blue.shade300, fontWeight: FontWeight.bold, fontSize: 14),
                                   underline: const SizedBox(),
                                   items: ['All Time', 'Today', 'Yesterday', 'Custom Date'].map((String value) {
                                     return DropdownMenuItem<String>(
                                       value: value,
-                                      child: Text(value),
+                                      child: Text(value, style: GoogleFonts.plusJakartaSans()),
                                     );
                                   }).toList(),
                                   onChanged: (String? newValue) async {
@@ -863,7 +871,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                     if (!_showCollectorsView && _filterType == 'Custom Date' && _customDate != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
-                        child: Text('Showing data for ${_customDate!.day}/${_customDate!.month}/${_customDate!.year}', style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w500)),
+                        child: Text('Showing data for ${_customDate!.day}/${_customDate!.month}/${_customDate!.year}', style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontWeight: FontWeight.w500)),
                       ),
                     // Search bar placed right below the Collections header
                     if (!_showCollectorsView) ...[  
@@ -921,7 +929,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Center(
-                                  child: Text('All Funds', style: TextStyle(
+                                  child: Text('All Funds', style: GoogleFonts.plusJakartaSans(
                                     color: !_showOnlyDonations ? Colors.white : Colors.white54,
                                     fontWeight: FontWeight.bold,
                                   )),
@@ -939,7 +947,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Center(
-                                  child: Text('Sponsorships', style: TextStyle(
+                                  child: Text('Sponsorships', style: GoogleFonts.plusJakartaSans(
                                     color: _showOnlyDonations ? Colors.white : Colors.white54,
                                     fontWeight: FontWeight.bold,
                                   )),
@@ -956,10 +964,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
               ),
             ),
             if (displayCollections.isEmpty)
-              const SliverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: Text('No collections found.', style: TextStyle(color: Colors.white54))),
+                  padding: const EdgeInsets.all(16.0),
+                  child: Center(child: Text('No collections found.', style: GoogleFonts.plusJakartaSans(color: Colors.white54))),
                 ),
               ),
             if (!_showCollectorsView)
@@ -986,13 +994,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(dateStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70)),
+                              Text(dateStr, style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70)),
                               Row(
                                 children: [
                                   if (summary['UPI']! > 0)
-                                    Text('UPI: ₹${summary['UPI']!.toStringAsFixed(0)}  ', style: TextStyle(fontSize: 12, color: Colors.purple.shade300, fontWeight: FontWeight.w600)),
+                                    Text('UPI: ₹${summary['UPI']!.toStringAsFixed(0)}  ', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.purple, fontWeight: FontWeight.w600)),
                                   if (summary['Cash']! > 0)
-                                    Text('Cash: ₹${summary['Cash']!.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.orange.shade300, fontWeight: FontWeight.w600)),
+                                    Text('Cash: ₹${summary['Cash']!.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.amber, fontWeight: FontWeight.w600)),
                                 ],
                               ),
                             ],
@@ -1024,10 +1032,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                           child: Card(
-                            margin: EdgeInsets.zero,
+                            margin: const EdgeInsets.only(bottom: 8),
                             color: const Color(0xFF1E1E1E),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(16),
                               side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                             ),
                             child: ListTile(
@@ -1099,10 +1107,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         child: Card(
-                          margin: EdgeInsets.zero,
+                          margin: const EdgeInsets.only(bottom: 8),
                           color: const Color(0xFF1E1E1E),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
                             side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                           ),
                           child: ListTile(
@@ -1114,17 +1122,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                               padding: const EdgeInsets.only(top: 4),
                               child: Row(
                                 children: [
-                                  Text(timeStr, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                  Text(timeStr, style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontSize: 13)),
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: unit.paymentMethod == 'UPI' ? Colors.purple.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
+                                      color: unit.paymentMethod == 'UPI' ? AppColors.purple.withValues(alpha: 0.2) : AppColors.amber.withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Text(unit.paymentMethod ?? 'Unknown', style: TextStyle(
+                                    child: Text(unit.paymentMethod ?? 'Unknown', style: GoogleFonts.plusJakartaSans(
                                       fontSize: 10,
-                                      color: unit.paymentMethod == 'UPI' ? Colors.purple.shade300 : Colors.orange.shade300,
+                                      color: unit.paymentMethod == 'UPI' ? AppColors.purple : AppColors.amber,
                                       fontWeight: FontWeight.bold,
                                     )),
                                   ),
@@ -1154,7 +1162,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                 ],
                               ),
                             ),
-                            trailing: Text('₹${unit.amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent)),
+                            trailing: Text('₹${unit.amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
                             onTap: () async {
                               await showUnitAmountForm(context, ref, building, unit, fromReports: true);
                               setState(() => _loadData());
@@ -1197,13 +1205,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                       ),
                       child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         leading: CircleAvatar(
+                          backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                           backgroundImage: collector.photoUrl != null ? NetworkImage(collector.photoUrl!) : null,
-                          child: collector.photoUrl == null ? const Icon(Icons.person) : null,
+                          child: collector.photoUrl == null ? Icon(LucideIcons.user, color: AppColors.accent) : null,
                         ),
-                        title: Text(collector.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                        subtitle: Text('Rank #${index + 1}', style: const TextStyle(color: Colors.white54)),
-                        trailing: Text('₹${total.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                        title: Text(collector.name, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                        subtitle: Text('Rank #${index + 1}', style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
+                        trailing: Text('₹${total.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
                         onTap: () {
                            Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
                              collectorName: collector.name,
@@ -1221,29 +1231,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           ],
         );
       }
-    );
-  }
-
-  Widget _buildGradientCard(String title, double amount, Color color, {bool isCount = false}) {
-    return Card(
-      color: color.withValues(alpha: 0.25),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(title, style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(isCount ? amount.toInt().toString() : '₹${amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1266,7 +1253,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
            BarChartRodData(
              toY: val,
              gradient: LinearGradient(
-               colors: [Colors.blue.shade300, Colors.blue.shade700],
+               colors: [AppColors.accentLight, AppColors.accent],
                begin: Alignment.bottomCenter,
                end: Alignment.topCenter,
              ),
@@ -1280,55 +1267,52 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     }
     if (maxY == 0) maxY = 100;
 
-    return AspectRatio(
-      aspectRatio: 1.5,
-      child: BarChart(
-        BarChartData(
-          gridData: const FlGridData(show: false),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  if (value >= 0 && value < 7) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(labels[value.toInt()], style: const TextStyle(fontSize: 10, color: Colors.blueGrey)),
-                    );
-                  }
-                  return const Text('');
-                },
-              ),
-            ),
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          borderData: FlBorderData(show: false),
-          maxY: maxY * 1.2,
-          barGroups: barGroups,
-          barTouchData: BarTouchData(
-            enabled: true,
-            handleBuiltInTouches: false,
-            touchCallback: (FlTouchEvent event, barTouchResponse) {
-              if (event is FlTapDownEvent) {
-                 if (barTouchResponse != null && barTouchResponse.spot != null) {
-                    setState(() {
-                      _touchedBarIndex = barTouchResponse.spot!.touchedBarGroupIndex;
-                    });
-                 }
-              }
-            },
-            touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (group) => Colors.blueGrey.shade800,
-              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                return BarTooltipItem(
-                  '₹${rod.toY.toStringAsFixed(0)}',
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                );
+    return BarChart(
+      BarChartData(
+        gridData: const FlGridData(show: false),
+        titlesData: FlTitlesData(
+          show: true,
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                if (value >= 0 && value < 7) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(labels[value.toInt()], style: GoogleFonts.plusJakartaSans(fontSize: 10, color: AppColors.textSecondary)),
+                  );
+                }
+                return const Text('');
               },
             ),
+          ),
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        borderData: FlBorderData(show: false),
+        maxY: maxY * 1.2,
+        barGroups: barGroups,
+        barTouchData: BarTouchData(
+          enabled: true,
+          handleBuiltInTouches: false,
+          touchCallback: (FlTouchEvent event, barTouchResponse) {
+            if (event is FlTapDownEvent) {
+               if (barTouchResponse != null && barTouchResponse.spot != null) {
+                  setState(() {
+                    _touchedBarIndex = barTouchResponse.spot!.touchedBarGroupIndex;
+                  });
+               }
+            }
+          },
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (group) => const Color(0xFF27272A),
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              return BarTooltipItem(
+                '₹${rod.toY.toStringAsFixed(0)}',
+                GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+              );
+            },
           ),
         ),
       ),

@@ -286,8 +286,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
 
       return Marker(
         point: LatLng(building.lat, building.lng),
-        width: 44,
-        height: 44,
+        width: 72,
+        height: 72,
         child: GestureDetector(
           onTap: () {
             _animatedMapMove(LatLng(building.lat, building.lng), 19.5);
@@ -298,6 +298,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
             children: [
               if (building.collectedCount > 0 && building.collectedCount < building.totalUnits)
                 Container(
+                  constraints: const BoxConstraints(maxWidth: 56),
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                   decoration: BoxDecoration(
                     color: AppColors.bgCard,

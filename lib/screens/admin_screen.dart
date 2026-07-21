@@ -92,52 +92,81 @@ class _TeamTab extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(12),
                 side: const BorderSide(color: AppColors.border),
               ),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                  foregroundColor: AppColors.accent,
-                  child: Text(collector.name[0].toUpperCase(), style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold)),
-                ),
-                title: Text(collector.name, style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-                subtitle: Text(collector.email ?? collector.phone, style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 13)),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Checkbox(
-                      value: collector.isCoreTeamMember,
-                      activeColor: AppColors.accent,
-                      onChanged: (val) async {
-                        if (val != null) {
-                          await authService.updateCollectorTeamStatus(collector.id, val);
-                        }
-                      },
-                    ),
-                    Text('Core', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.textSecondary)),
-                    const SizedBox(width: 8),
-                    DropdownButton<String>(
-                      value: collector.role,
-                      dropdownColor: AppColors.bgCard,
-                      style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 13),
-                      underline: Container(), // Remove underline
-                      icon: const Icon(LucideIcons.chevronDown, size: 16, color: AppColors.textSecondary),
-                      items: [
-                        DropdownMenuItem(value: 'viewer', child: Text('Viewer', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
-                        DropdownMenuItem(value: 'team_member', child: Text('Team Member', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
-                        DropdownMenuItem(value: 'collector', child: Text('Collector', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
-                        DropdownMenuItem(value: 'admin', child: Text('Admin', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: AppColors.accent.withValues(alpha: 0.2),
+                          foregroundColor: AppColors.accent,
+                          child: Text(collector.name[0].toUpperCase(), style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                collector.name,
+                                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 18),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                collector.email ?? collector.phone,
+                                style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        DropdownButton<String>(
+                          value: collector.role,
+                          dropdownColor: AppColors.bgCard,
+                          style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontSize: 13),
+                          underline: Container(),
+                          icon: const Icon(LucideIcons.chevronDown, size: 16, color: AppColors.textSecondary),
+                          items: [
+                            DropdownMenuItem(value: 'viewer', child: Text('Viewer', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
+                            DropdownMenuItem(value: 'team_member', child: Text('Team Member', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
+                            DropdownMenuItem(value: 'collector', child: Text('Collector', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
+                            DropdownMenuItem(value: 'admin', child: Text('Admin', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary))),
+                          ],
+                          onChanged: (newRole) async {
+                            if (newRole != null && newRole != collector.role) {
+                              await authService.updateCollectorRole(collector.id, newRole);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Updated role for ${collector.name}', style: GoogleFonts.plusJakartaSans()),
+                                  backgroundColor: AppColors.bgCard,
+                                ),
+                              );
+                            }
+                          },
+                        ),
                       ],
-                      onChanged: (newRole) async {
-                        if (newRole != null && newRole != collector.role) {
-                          await authService.updateCollectorRole(collector.id, newRole);
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Updated role for ${collector.name}', style: GoogleFonts.plusJakartaSans()),
-                              backgroundColor: AppColors.bgCard,
-                            ),
-                          );
-                        }
-                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        FilterChip(
+                          selected: collector.isCoreTeamMember,
+                          label: Text('Core team', style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary)),
+                          onSelected: (val) async {
+                            await authService.updateCollectorTeamStatus(collector.id, val);
+                          },
+                          selectedColor: AppColors.accent.withValues(alpha: 0.2),
+                          checkmarkColor: AppColors.accent,
+                          side: const BorderSide(color: AppColors.border),
+                        ),
+                      ],
                     ),
                   ],
                 ),

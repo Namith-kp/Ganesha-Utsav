@@ -60,6 +60,7 @@ class AuthService {
             'photoUrl': userCredential.user!.photoURL,
             'role': 'viewer', // Default role for new signups
             'isCoreTeamMember': false,
+            'canAccessAdminControl': false,
           });
         }
       }
@@ -76,7 +77,17 @@ class AuthService {
     if (role != 'collector') {
       updates['isCoreTeamMember'] = false;
     }
+    if (role != 'admin') {
+      updates['canAccessAdminControl'] = false;
+    }
     await _firestore.collection('collectors').doc(uid).update(updates);
+  }
+
+  // Update whether an admin can access the admin control section
+  Future<void> updateAdminControlAccess(String uid, bool enabled) async {
+    await _firestore.collection('collectors').doc(uid).update({
+      'canAccessAdminControl': enabled,
+    });
   }
 
   // Update core team member status

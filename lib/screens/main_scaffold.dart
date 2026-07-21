@@ -29,6 +29,7 @@ class MainScaffold extends ConsumerWidget {
     }
 
     final isAdmin = profile.isAdmin;
+    final hasAdminControlAccess = profile.hasAdminControlAccess;
     final isCollector = profile.isCollector;
     final canSeeTeamData = profile.canSeeTeamData;
     final isTeamMember = profile.role == 'team_member';
@@ -50,11 +51,13 @@ class MainScaffold extends ConsumerWidget {
         label: 'Reports',
         route: '/reports',
       ));
-      items.add(_NavItem(
-        icon: LucideIcons.shieldAlert,
-        label: 'Admin',
-        route: '/admin',
-      ));
+      if (hasAdminControlAccess) {
+        items.add(_NavItem(
+          icon: LucideIcons.shieldAlert,
+          label: 'Admin',
+          route: '/admin',
+        ));
+      }
     } else if (isTeamMember) {
       items.add(_NavItem(
         icon: LucideIcons.barChart2,
