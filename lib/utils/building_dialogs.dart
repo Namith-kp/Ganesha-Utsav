@@ -54,10 +54,10 @@ void _showAddUnitDialog(BuildContext context, WidgetRef ref, Building building) 
   );
 }
 
-void showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building building) {
+Future<void> showCollectionBottomSheet(BuildContext context, WidgetRef ref, Building building) async {
   final buildingService = ref.read(buildingServiceProvider);
   
-  showModalBottomSheet(
+  await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: AppColors.bgBase,
@@ -305,7 +305,9 @@ Future<void> showUnitAmountForm(BuildContext context, WidgetRef ref, Building bu
     builder: (ctx) {
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: _AmountFormWidget(building: building, unit: unit, fromReports: fromReports),
+        child: SingleChildScrollView(
+          child: _AmountFormWidget(building: building, unit: unit, fromReports: fromReports),
+        ),
       );
     },
   );
@@ -620,7 +622,6 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        Navigator.of(context).pop();
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => HomeScreen(
@@ -679,7 +680,6 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        Navigator.of(context).pop();
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => StreetViewScreen(
@@ -933,17 +933,6 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                 ),
               ),
               const SizedBox(width: 8),
-              DropdownButton<String>(
-                dropdownColor: AppColors.bgCard,
-                value: paymentMethod,
-                hint: Text('Method', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary, fontSize: 14)),
-                style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
-                items: ['Cash', 'UPI'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                onChanged: photoBase64 == null ? null : (val) {
-                  if (val != null) setState(() => paymentMethod = val);
-                },
-              ),
-              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(LucideIcons.camera, size: 32, color: AppColors.accent),
                 onPressed: () async {
@@ -960,6 +949,51 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                     });
                   }
                 },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Explicit Payment Method Selection
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: photoBase64 == null ? null : () => setState(() => paymentMethod = 'Cash'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: paymentMethod == 'Cash' ? Colors.green.withValues(alpha: 0.2) : Colors.transparent,
+                      border: Border.all(color: paymentMethod == 'Cash' ? Colors.green : AppColors.borderLight.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text('Cash', style: GoogleFonts.plusJakartaSans(
+                        color: paymentMethod == 'Cash' ? Colors.green : AppColors.textSecondary,
+                        fontWeight: FontWeight.bold,
+                      )),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: photoBase64 == null ? null : () => setState(() => paymentMethod = 'UPI'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: paymentMethod == 'UPI' ? AppColors.purple.withValues(alpha: 0.2) : Colors.transparent,
+                      border: Border.all(color: paymentMethod == 'UPI' ? AppColors.purple : AppColors.borderLight.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text('UPI', style: GoogleFonts.plusJakartaSans(
+                        color: paymentMethod == 'UPI' ? AppColors.purple : AppColors.textSecondary,
+                        fontWeight: FontWeight.bold,
+                      )),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

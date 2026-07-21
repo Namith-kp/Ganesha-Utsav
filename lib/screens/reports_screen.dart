@@ -36,7 +36,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   Future<List<dynamic>>? _combinedCollectionsFuture;
   Future<List<dynamic>>? _combinedSpendingsFuture;
   Future<List<Spending>>? _spendingsFuture;
-  Future<List<Map<String, dynamic>>>? _tasksFuture;
+
   TabController? _tabController;
   final ScrollController _collectionsScrollController = ScrollController();
   int _touchedBarIndex = -1;
@@ -63,13 +63,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     super.didChangeDependencies();
     final profile = ref.read(collectorProfileProvider).value;
     final canSeeTeamData = profile?.canSeeTeamData ?? false;
-    final isCollector = profile?.isCollector ?? false;
-    final showLeaderboardTab = isCollector && !canSeeTeamData;
+    final isViewer = profile?.role == 'viewer';
+    final hasExtraTabs = canSeeTeamData || isViewer;
     
     int length = 1; // Collections
-    if (showLeaderboardTab) length += 1; // Leaderboard
-    if (canSeeTeamData) length += 2; // Team Funds, Spendings
-    if (isCollector) length += 1; // Tasks
+    if (hasExtraTabs) length += 2; // Team Funds, Spendings
 
     if (_tabController?.length != length) {
       _tabController?.dispose();
@@ -105,7 +103,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       _allCollectionsFuture!,
       _collectorsFuture!
     ]);
-    _tasksFuture = ref.read(buildingServiceProvider).getPendingCollections();
   }
 
   Future<void> _confirmDeleteSpending(Spending spending) async {
@@ -218,10 +215,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           controller: _tabController,
           tabs: [
             const Tab(text: 'Collections'),
-            if ((profile?.isCollector ?? false) && !(profile?.canSeeTeamData ?? false)) const Tab(text: 'Leaderboard'),
-            if (profile?.canSeeTeamData ?? false) const Tab(text: 'Team Funds'),
-            if (profile?.canSeeTeamData ?? false) const Tab(text: 'Spendings'),
-            if (profile?.isCollector ?? false) const Tab(text: 'Tasks'),
+            if (profile?.canSeeTeamData == true || profile?.role == 'viewer') const Tab(text: 'Team Funds'),
+            if (profile?.canSeeTeamData == true || profile?.role == 'viewer') const Tab(text: 'Spendings'),
           ],
         ),
         actions: [
@@ -245,11 +240,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildCollectionsTab(isAdmin, _collectionsScrollController),
-          if ((profile?.isCollector ?? false) && !(profile?.canSeeTeamData ?? false)) _buildLeaderboardTab(isAdmin),
-          if (profile?.canSeeTeamData ?? false) _buildTeamFundsTab(isAdmin, profile?.id),
-          if (profile?.canSeeTeamData ?? false) _buildSpendingsTab(isAdmin, profile?.id, profile?.name),
-          if (profile?.isCollector ?? false) _buildTasksTab(),
+          _buildCollectionsTab(isAdmin, _collectionsScrollController, profile?.role == 'viewer'),
+          if (profile?.canSeeTeamData == true || profile?.role == 'viewer') _buildTeamFundsTab(isAdmin, profile?.id, profile?.role == 'viewer'),
+          if (profile?.canSeeTeamData == true || profile?.role == 'viewer') _buildSpendingsTab(isAdmin, profile?.id, profile?.name, profile?.role == 'viewer'),
         ],
       ),
       floatingActionButton: _buildFloatingActionButton(isAdmin, profile),
@@ -344,7 +337,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     }
   }
 
-  Widget _buildTeamFundsTab(bool isAdmin, String? currentUserId) {
+  Widget _buildTeamFundsTab(bool isAdmin, String? currentUserId, [bool isViewer = false]) {
     return FutureBuilder<List<Collector>>(
       future: _collectorsFuture,
       builder: (context, snapshot) {
@@ -371,42 +364,43 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
         return Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF5E5CE6), Color(0xFF3F3D96)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            if (!isViewer)
+              Container(
+                padding: const EdgeInsets.all(20),
+                margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF5E5CE6), Color(0xFF3F3D96)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(color: const Color(0xFF5E5CE6).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6)),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(color: const Color(0xFF5E5CE6).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6)),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Total Team Funds', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
-                      const SizedBox(height: 4),
-                      Text('₹${totalFunds.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Total Team Funds', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+                        const SizedBox(height: 4),
+                        Text('₹${totalFunds.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                      ],
                     ),
-                    child: const Icon(LucideIcons.users, color: Colors.white, size: 28),
-                  ),
-                ],
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(LucideIcons.users, color: Colors.white, size: 28),
+                    ),
+                  ],
+                ),
               ),
-            ),
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -446,77 +440,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     );
   }
 
-  Widget _buildTasksTab() {
-    _tasksFuture ??= ref.read(buildingServiceProvider).getPendingCollections();
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _tasksFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-        
-        final tasks = snapshot.data ?? [];
-        
-        if (tasks.isEmpty) {
-          return const Center(child: Text('No pending tasks.', style: TextStyle(color: Colors.white54)));
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: tasks.length,
-          itemBuilder: (context, index) {
-            final task = tasks[index];
-            final Unit unit = task['unit'];
-            final Building building = task['building'];
-            
-            return Card(
-              color: const Color(0xFF1E1E1E),
-              margin: const EdgeInsets.only(bottom: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                leading: Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    building.totalUnits > 1 ? LucideIcons.building2 : LucideIcons.home,
-                    color: Colors.orange,
-                  ),
-                ),
-                title: Text('${building.name} - ${unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Row(
-                    children: [
-                      const Icon(LucideIcons.clock, size: 14, color: Colors.white54),
-                      const SizedBox(width: 4),
-                      Text('Pending', style: GoogleFonts.plusJakartaSans(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-                trailing: const Icon(LucideIcons.chevronRight, color: Colors.white54),
-                onTap: () async {
-                  await showUnitAmountForm(context, ref, building, unit, fromReports: true);
-                  setState(() => _loadData());
-                },
-              ),
-            );
-          },
-        );
-      }
-    );
-  }
-
-  Widget _buildSpendingsTab(bool isAdmin, String? currentUserId, String? currentUserName) {
+  Widget _buildSpendingsTab(bool isAdmin, String? currentUserId, String? currentUserName, [bool isViewer = false]) {
     return FutureBuilder(
       future: _combinedSpendingsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
@@ -554,126 +478,102 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
         double remainingFunds = (totalCollections + totalTeamFunds) - totalSpendings;
 
-        return CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (!isViewer) ...[
+              Row(
+                children: [
+                  Expanded(child: _buildMetricCard('Total Collections', '₹${totalCollections.toStringAsFixed(0)}', LucideIcons.trendingUp, Colors.greenAccent)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildMetricCard('Total Funds', '₹${totalTeamFunds.toStringAsFixed(0)}', LucideIcons.users, Colors.blueAccent)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _buildMetricCard('Total Spendings', '₹${totalSpendings.toStringAsFixed(0)}', LucideIcons.trendingDown, Colors.redAccent)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildMetricCard('Remaining', '₹${remainingFunds.toStringAsFixed(0)}', LucideIcons.wallet, remainingFunds >= 0 ? Colors.greenAccent : Colors.redAccent)),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ],
+            if (!isViewer && spendings.isNotEmpty && spendingsByReason.isNotEmpty)
+              Container(
+                height: 200,
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
                 child: Row(
                   children: [
                     Expanded(
-                      child: _buildMetricCard(
-                        'Total Spendings',
-                        '₹${totalSpendings.toStringAsFixed(0)}',
-                        LucideIcons.trendingDown,
-                        Colors.redAccent,
+                      flex: 1,
+                      child: PieChart(
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 40,
+                          sections: spendingsByReason.entries.map((entry) {
+                            final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
+                            return PieChartSectionData(
+                              color: color,
+                              value: entry.value,
+                              title: '',
+                              radius: 25,
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
                     Expanded(
-                      child: _buildMetricCard(
-                        'Remaining Funds',
-                        '₹${remainingFunds.toStringAsFixed(0)}',
-                        LucideIcons.wallet,
-                        remainingFunds >= 0 ? Colors.greenAccent : Colors.redAccent,
+                      flex: 1,
+                      child: ListView(
+                        children: spendingsByReason.entries.map((entry) {
+                          final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    entry.key, 
+                                    style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text('₹${entry.value.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-            if (spendings.isNotEmpty && spendingsByReason.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Container(
-                  height: 200,
-                  padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E1E1E),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 1,
-                        child: PieChart(
-                          PieChartData(
-                            sectionsSpace: 2,
-                            centerSpaceRadius: 40,
-                            sections: spendingsByReason.entries.map((entry) {
-                              final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
-                              return PieChartSectionData(
-                                color: color,
-                                value: entry.value,
-                                title: '',
-                                radius: 25,
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 1,
-                        child: ListView(
-                          children: spendingsByReason.entries.map((entry) {
-                            final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
-                                children: [
-                                  Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      entry.key, 
-                                      style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
-                                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  Text('₹${entry.value.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             if (spendings.isEmpty)
-              const SliverFillRemaining(
-                child: Center(
-                  child: Text('No spendings recorded yet.', style: TextStyle(color: Colors.white54)),
-                ),
-              )
+              const Center(child: Text('No spendings recorded yet.', style: TextStyle(color: Colors.white54)))
             else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final spending = spendings[index];
-                      return _SpendingCard(
-                        spending: spending,
-                        isAdmin: isAdmin,
-                        onEdit: () async {
-                          final didUpdate = await showEditSpendingBottomSheet(context, ref.read(spendingServiceProvider), spending);
-                          if (didUpdate == true) {
-                            setState(() {
-                              _loadData();
-                            });
-                          }
-                        },
-                        onDelete: () => _confirmDeleteSpending(spending),
-                      );
-                    },
-                    childCount: spendings.length,
-                  ),
-                ),
-              ),
-            const SliverToBoxAdapter(child: SizedBox(height: 80)), // Space for FAB
+              ...spendings.map((spending) => _SpendingCard(
+                spending: spending,
+                isAdmin: isAdmin,
+                onEdit: () async {
+                  final didUpdate = await showEditSpendingBottomSheet(context, ref.read(spendingServiceProvider), spending);
+                  if (didUpdate == true) {
+                    setState(() {
+                      _loadData();
+                    });
+                  }
+                },
+                onDelete: () => _confirmDeleteSpending(spending),
+              )).toList(),
+            const SizedBox(height: 80), // Space for FAB
           ],
         );
       },
@@ -720,7 +620,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     );
   }
 
-  Widget _buildCollectionsTab(bool isAdmin, ScrollController scrollController) {
+  Widget _buildCollectionsTab(bool isAdmin, ScrollController scrollController, [bool isViewer = false]) {
     return FutureBuilder(
       future: _combinedCollectionsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
@@ -1308,6 +1208,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                            Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
                              collectorName: collector.name,
                              collections: collectorItems[collector.id] ?? [],
+                             isViewer: isViewer,
                            )));
                         },
                       ),
@@ -1318,62 +1219,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
               ),
             const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
           ],
-        );
-      }
-    );
-  }
-
-  Widget _buildLeaderboardTab(bool isAdmin) {
-    _allCollectionsFuture ??= ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
-    return FutureBuilder(
-      future: Future.wait([_allCollectionsFuture!, _collectorsFuture!]),
-      builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
-
-        final collections = snapshot.data![0] as List<Map<String, dynamic>>;
-        final collectors = snapshot.data![1] as List<Collector>;
-
-        Map<String, double> collectorTotals = {};
-        Map<String, List<Map<String, dynamic>>> collectorItems = {};
-        
-        for (var item in collections) {
-           final Unit unit = item['unit'];
-           if (unit.collectedBy != null) {
-              collectorTotals[unit.collectedBy!] = (collectorTotals[unit.collectedBy!] ?? 0) + unit.amount;
-              collectorItems.putIfAbsent(unit.collectedBy!, () => []).add(item);
-           }
-        }
-
-        collectors.sort((a, b) => (collectorTotals[b.id] ?? 0).compareTo(collectorTotals[a.id] ?? 0));
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: collectors.length,
-          itemBuilder: (context, index) {
-             final collector = collectors[index];
-             final total = collectorTotals[collector.id] ?? 0.0;
-             if (total == 0) return const SizedBox.shrink();
-
-             return Card(
-               margin: const EdgeInsets.only(bottom: 8),
-               child: ListTile(
-                 leading: CircleAvatar(
-                   backgroundImage: collector.photoUrl != null ? NetworkImage(collector.photoUrl!) : null,
-                   child: collector.photoUrl == null ? const Icon(Icons.person) : null,
-                 ),
-                 title: Text(collector.name),
-                 subtitle: Text('Rank #${index + 1}'),
-                 trailing: Text('₹${total.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
-                 onTap: isAdmin ? () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
-                      collectorName: collector.name,
-                      collections: collectorItems[collector.id] ?? [],
-                    )));
-                 } : null,
-               ),
-             );
-          },
         );
       }
     );

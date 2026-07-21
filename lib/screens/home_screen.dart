@@ -65,11 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     final buildingsAsync = ref.watch(buildingsProvider);
     final collectorAsync = ref.watch(collectorProfileProvider);
     final profile = collectorAsync.value;
-    final isAdmin = profile?.isAdmin ?? false;
-    final canAccessReports = profile?.canAccessReports ?? false;
-    final canAccessAR = profile?.canAccessAR ?? false;
     final canCreate = profile?.canCreate ?? false;
-    final canSeeAllTags = profile?.canSeeAllTags ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -101,61 +97,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
           ],
         ),
         actions: [
-          if (isAdmin)
-            _NavIconButton(
-              icon: LucideIcons.shieldAlert,
-              tooltip: 'Admin Dashboard',
-              color: AppColors.accent,
-              onPressed: () => context.push('/admin'),
-            ),
-          if (canAccessReports)
-            _NavIconButton(
-              icon: LucideIcons.barChart2,
-              tooltip: 'Reports',
-              onPressed: () => context.push('/reports'),
-            ),
-
-          if (canAccessAR)
-            _NavIconButton(
-              icon: LucideIcons.box,
-              tooltip: 'AR Street View',
-              onPressed: () => context.push('/ar'),
-            ),
-          _NavIconButton(
-            icon: LucideIcons.logOut,
-            tooltip: 'Logout',
-            onPressed: () async => await authService.signOut(),
-          ),
+          // Nav bar handles other screens now
         ],
       ),
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (canAccessAR)
-            FloatingActionButton(
-              heroTag: 'streetViewBtn',
-              backgroundColor: AppColors.accent,
-              onPressed: () {
-                final pos = ref.read(liveLocationProvider).value;
-                if (pos != null) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => StreetViewScreen(
-                        lat: pos.latitude,
-                        lon: pos.longitude,
-                      ),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Waiting for location...')),
-                  );
-                }
-              },
-              child: const Icon(LucideIcons.map, color: Colors.white),
-            ),
-          if (canAccessAR)
-            const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'myLocationBtn',
             backgroundColor: AppColors.bgCard,
@@ -351,6 +298,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
         height: 80,
         child: GestureDetector(
           onTap: () {
+            _animatedMapMove(LatLng(building.lat, building.lng), 19.5);
             showCollectionBottomSheet(context, ref, building);
           },
           child: Column(
@@ -383,28 +331,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     }).toList();
   }
 
-}
-
-class _NavIconButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-  final Color? color;
-
-  const _NavIconButton({
-    Key? key,
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-    this.color,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, color: color ?? Colors.white),
-      tooltip: tooltip,
-      onPressed: onPressed,
-    );
-  }
 }

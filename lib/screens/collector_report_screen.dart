@@ -11,11 +11,13 @@ import '../main.dart';
 class CollectorReportScreen extends ConsumerWidget {
   final String collectorName;
   final List<Map<String, dynamic>> collections;
+  final bool isViewer;
 
   const CollectorReportScreen({
     super.key,
     required this.collectorName,
     required this.collections,
+    this.isViewer = false,
   });
 
   @override
@@ -42,27 +44,28 @@ class CollectorReportScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Card(
-              color: AppColors.accent.withValues(alpha: 0.15),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: AppColors.accent.withValues(alpha: 0.3)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Total Collected', style: GoogleFonts.plusJakartaSans(fontSize: 18, color: AppColors.textSecondary)),
-                    Text('₹${totalCollected.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.accent)),
-                  ],
+          if (!isViewer)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Card(
+                color: AppColors.accent.withValues(alpha: 0.15),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: AppColors.accent.withValues(alpha: 0.3)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total Collected', style: GoogleFonts.plusJakartaSans(fontSize: 18, color: AppColors.textSecondary)),
+                      Text('₹${totalCollected.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.accent)),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           Expanded(
             child: collections.isEmpty
                 ? Center(child: Text('No collections yet.', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)))

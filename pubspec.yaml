@@ -63,7 +63,6 @@ dependencies:
 
   intl: any
   firebase_storage: ^13.3.0
-  sensors_plus: 6.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
