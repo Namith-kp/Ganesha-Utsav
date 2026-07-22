@@ -38,6 +38,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   final MapController _mapController = MapController();
   String _selectedFilter = 'all';
   bool _hasZoomedToTarget = false;
+  bool _hasCenteredOnUser = false;
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
     final latTween = Tween<double>(
@@ -87,6 +88,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final profile = collectorAsync.value;
     final canCreate = profile?.canCreate ?? false;
     final canSeeAllTags = profile?.canSeeAllTags ?? false;
+
+    // Automatically snap to user's location on startup once GPS is acquired
+    ref.listen<AsyncValue<Position?>>(liveLocationProvider, (previous, next) {
+      if (!_hasCenteredOnUser && next.value != null && widget.initialLat == null) {
+        _hasCenteredOnUser = true;
+        _animatedMapMove(
+          LatLng(next.value!.latitude, next.value!.longitude),
+          18.0,
+        );
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
