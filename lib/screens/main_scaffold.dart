@@ -7,10 +7,10 @@ import '../providers/auth_provider.dart';
 import '../main.dart';
 
 class MainScaffold extends ConsumerWidget {
-  final Widget child;
+  final StatefulNavigationShell navigationShell;
   final String location;
 
-  const MainScaffold({super.key, required this.child, required this.location});
+  const MainScaffold({super.key, required this.navigationShell, required this.location});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -54,14 +54,20 @@ class MainScaffold extends ConsumerWidget {
     // Everyone gets Map
     items.add(_NavItem(icon: LucideIcons.map, label: 'Map', route: '/map'));
 
-    // Everyone gets Reports
-    items.add(
-      _NavItem(
-        icon: LucideIcons.barChart2,
-        label: 'Reports',
-        route: '/reports',
-      ),
-    );
+    final bool canSeeReports = profile.isAdmin ||
+        profile.role == 'team_member' ||
+        profile.role == 'viewer' ||
+        (profile.canSeeTeamData == true);
+
+    if (canSeeReports) {
+      items.add(
+        _NavItem(
+          icon: LucideIcons.barChart2,
+          label: 'Reports',
+          route: '/reports',
+        ),
+      );
+    }
 
     // Everyone gets Profile
     items.add(
@@ -128,7 +134,7 @@ class MainScaffold extends ConsumerWidget {
                   width: 1,
                   color: AppColors.border,
                 ),
-                Expanded(child: child),
+                Expanded(child: navigationShell),
               ],
             ),
           );
@@ -136,7 +142,7 @@ class MainScaffold extends ConsumerWidget {
 
         // Mobile Layout
         return Scaffold(
-          body: child,
+          body: navigationShell,
           bottomNavigationBar: Container(
             decoration: const BoxDecoration(
               border: Border(

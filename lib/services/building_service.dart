@@ -454,11 +454,28 @@ class BuildingService {
     QuerySnapshot? buildingsSnapshot;
     QuerySnapshot? correctionsSnapshot;
     QuerySnapshot? collectorsSnapshot;
+    QuerySnapshot? allUnitsSnapshot;
 
     try {
       buildingsSnapshot = await _firestore.collection('buildings').get();
     } catch (e) {
       print('Error fetching buildings: $e');
+    }
+    
+    try {
+      final query = _firestore.collectionGroup('units');
+      try {
+        allUnitsSnapshot = await query.get(const GetOptions(source: Source.cache));
+        if (allUnitsSnapshot.docs.isNotEmpty) {
+          query.get(const GetOptions(source: Source.server)); // bg update
+        } else {
+          allUnitsSnapshot = await query.get();
+        }
+      } catch (_) {
+        allUnitsSnapshot = await query.get();
+      }
+    } catch (e) {
+      print('Error fetching all units: $e');
     }
     
     try {
@@ -529,42 +546,45 @@ class BuildingService {
     }
 
     // ── Units ────────────────────────────────────────────────────────────────
-    final unitFutures = (buildingsSnapshot?.docs ?? []).map((buildingDoc) async {
-      final building = Building.fromMap(
-        buildingDoc.data() as Map<String, dynamic>,
-        buildingDoc.id,
-      );
-      
-      QuerySnapshot? unitsSnapshot;
+    final buildingMap = <String, Building>{};
+    for (var bDoc in buildingsSnapshot?.docs ?? []) {
+      buildingMap[bDoc.id] = Building.fromMap(bDoc.data() as Map<String, dynamic>, bDoc.id);
+    }
+    
+    try {
+      final query = _firestore.collectionGroup('units');
       try {
-        unitsSnapshot = await buildingDoc.reference.collection('units').get();
-      } catch (e) {
-        print('Error fetching units for building ${building.id}: $e');
+        allUnitsSnapshot = await query.get(const GetOptions(source: Source.cache));
+        if (allUnitsSnapshot.docs.isNotEmpty) {
+          query.get(const GetOptions(source: Source.server)); // bg update
+        } else {
+          allUnitsSnapshot = await query.get();
+        }
+      } catch (_) {
+        allUnitsSnapshot = await query.get();
       }
+    } catch (e) {
+      print('Error fetching all units: $e');
+    }
 
-      final List<Map<String, dynamic>> buildingCollections = [];
-      if (unitsSnapshot != null) {
-        for (final unitDoc in unitsSnapshot.docs) {
-          final unit = Unit.fromMap(
-            unitDoc.data() as Map<String, dynamic>,
-            unitDoc.id,
-          );
-          if (unit.status == 'collected') {
-            if (filterCollectorId != null &&
-                unit.collectedBy != filterCollectorId)
-              continue;
+    final collections = <Map<String, dynamic>>[];
+    collections.addAll(teamFundsData);
 
-            // If the unit has been edited, show it at its original date with originalAmount
-            buildingCollections.add({'unit': unit, 'building': building});
+    if (allUnitsSnapshot != null) {
+      for (final unitDoc in allUnitsSnapshot.docs) {
+        final data = unitDoc.data() as Map<String, dynamic>;
+        final unit = Unit.fromMap(data, unitDoc.id);
+        
+        if (unit.status == 'collected') {
+          if (filterCollectorId != null && unit.collectedBy != filterCollectorId) continue;
+          
+          final building = buildingMap[unit.buildingId];
+          if (building != null) {
+            collections.add({'unit': unit, 'building': building});
           }
         }
       }
-      return buildingCollections;
-    });
-
-    final unitResults = await Future.wait(unitFutures);
-    final collections = unitResults.expand((x) => x).toList();
-    collections.addAll(teamFundsData);
+    }
 
     // ── Correction delta entries ─────────────────────────────────────────────
     // Build lookups: unitId -> building & unit (from already-fetched real units)
@@ -665,24 +685,23 @@ class BuildingService {
   Future<List<Map<String, dynamic>>> getPendingCollections() async {
     final buildingsSnapshot = await _firestore.collection('buildings').get();
 
-    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
-      final building = Building.fromMap(buildingDoc.data(), buildingDoc.id);
-      final unitsSnapshot = await buildingDoc.reference
-          .collection('units')
-          .get();
+    final buildingMap = <String, Building>{};
+    for (var bDoc in buildingsSnapshot.docs) {
+      buildingMap[bDoc.id] = Building.fromMap(bDoc.data(), bDoc.id);
+    }
 
-      final List<Map<String, dynamic>> buildingCollections = [];
-      for (final unitDoc in unitsSnapshot.docs) {
-        final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
-        if (unit.status != 'collected') {
-          buildingCollections.add({'unit': unit, 'building': building});
+    final unitsSnapshot = await _firestore.collectionGroup('units').get();
+    
+    final collections = <Map<String, dynamic>>[];
+    for (final unitDoc in unitsSnapshot.docs) {
+      final unit = Unit.fromMap(unitDoc.data(), unitDoc.id);
+      if (unit.status != 'collected') {
+        final building = buildingMap[unit.buildingId];
+        if (building != null) {
+          collections.add({'unit': unit, 'building': building});
         }
       }
-      return buildingCollections;
-    });
-
-    final results = await Future.wait(unitFutures);
-    final collections = results.expand((x) => x).toList();
+    }
 
     // Sort by building name, then unit label
     collections.sort((a, b) {

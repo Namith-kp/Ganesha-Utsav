@@ -82,7 +82,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final authService = ref.read(authServiceProvider);
-    final locationAsync = ref.watch(currentLocationProvider);
+    final buildingsAsync = ref.watch(buildingsProvider);
     final collectorAsync = ref.watch(collectorProfileProvider);
     final profile = collectorAsync.value;
     final canCreate = profile?.canCreate ?? false;
@@ -145,13 +145,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         ],
       ),
-      body: locationAsync.when(
-        data: (position) {
-          if (position == null) {
-            return const Center(child: Text('Location permission denied.'));
+      body: Builder(
+        builder: (context) {
+          LatLng initialCenter = const LatLng(20.5937, 78.9629); // Center of India fallback
+          final buildings = buildingsAsync.value ?? [];
+          if (buildings.isNotEmpty) {
+            initialCenter = LatLng(buildings.first.lat, buildings.first.lng);
           }
-
-          final initialCenter = LatLng(position.latitude, position.longitude);
 
           return Stack(
             children: [
@@ -255,9 +255,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) =>
-            Center(child: Text('Error getting location: $err')),
       ),
     );
   }

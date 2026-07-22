@@ -25,6 +25,7 @@ final dashboardDataProvider = FutureProvider.autoDispose<DashboardData>((
   double totalFunds = 0;
 
   for (var item in collections) {
+    if (item['isCorrection'] == true) continue;
     final Unit unit = item['unit'];
     totalFunds += unit.amount;
   }
@@ -36,8 +37,8 @@ final dashboardDataProvider = FutureProvider.autoDispose<DashboardData>((
       final bool isCorrection = item['isCorrection'] == true;
       final Building building = item['building'];
 
-      // Only include real units, exclude delta corrections & team funds
-      return !isCorrection && building.id != 'team_funds' && unit.amount > 0;
+      // Only include real units, exclude delta corrections
+      return !isCorrection && unit.amount > 0;
     }),
   );
 
@@ -54,7 +55,6 @@ final dashboardDataProvider = FutureProvider.autoDispose<DashboardData>((
       final bool isCorrection = item['isCorrection'] == true;
       final Building building = item['building'];
       return !isCorrection &&
-          building.id != 'team_funds' &&
           unit.donationItem != null &&
           unit.donationItem!.trim().isNotEmpty;
     }),

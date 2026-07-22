@@ -16,6 +16,22 @@ class AuthService {
       final doc = await _firestore.collection('collectors').doc(uid).get();
       if (doc.exists && doc.data() != null) {
         return Collector.fromMap(doc.data()!, doc.id);
+      } else if (_firebaseAuth.currentUser != null && _firebaseAuth.currentUser!.uid == uid) {
+        // Auto-create profile if it doesn't exist for the logged-in user
+        final user = _firebaseAuth.currentUser!;
+        final isAnonymous = user.isAnonymous;
+        
+        final newData = {
+          'name': isAnonymous ? 'Web Guest' : (user.displayName ?? 'Unknown'),
+          'email': user.email ?? '',
+          'photoUrl': user.photoURL,
+          'role': 'viewer',
+          'isCoreTeamMember': false,
+          'canAccessAdminControl': false,
+        };
+        
+        await _firestore.collection('collectors').doc(uid).set(newData);
+        return Collector.fromMap(newData, uid);
       }
     } catch (e) {
       print("Error fetching collector profile: $e");
@@ -32,12 +48,23 @@ class AuthService {
     });
   }
 
-  // Future all collectors
+  // Future all collectors (Cache First)
   Future<List<Collector>> getAllCollectors() async {
     try {
-      final snapshot = await _firestore.collection('collectors').get();
+      final query = _firestore.collection('collectors');
+      QuerySnapshot snapshot;
+      try {
+        snapshot = await query.get(const GetOptions(source: Source.cache));
+        if (snapshot.docs.isNotEmpty) {
+          query.get(const GetOptions(source: Source.server)); // update cache in bg
+        } else {
+          snapshot = await query.get();
+        }
+      } catch (_) {
+        snapshot = await query.get();
+      }
       return snapshot.docs
-          .map((doc) => Collector.fromMap(doc.data(), doc.id))
+          .map((doc) => Collector.fromMap(doc.data() as Map<String, dynamic>, doc.id))
           .toList();
     } catch (e) {
       print('Error fetching collectors: $e');

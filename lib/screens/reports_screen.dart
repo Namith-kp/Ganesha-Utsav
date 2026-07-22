@@ -624,7 +624,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
         double totalCollections = 0;
         for (var data in allCollections) {
-          if (data['isTeamFund'] == true || data['isCorrection'] == true)
+          if (data['isCorrection'] == true)
             continue;
           final Unit unit = data['unit'];
           totalCollections += unit.amount;
@@ -645,8 +645,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
               (spendingsByReason[spending.reason] ?? 0) + spending.amount;
         }
 
-        double remainingFunds =
-            (totalCollections + totalTeamFunds) - totalSpendings;
+        double remainingFunds = totalCollections - totalSpendings;
 
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -895,6 +894,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
         final Map<DateTime, double> dailyTotalsMap = {};
         for (var item in collections) {
+          if (item['isCorrection'] == true) {
+            continue;
+          }
           final Unit unit = item['unit'];
           if (unit.collectedAt != null) {
             final d = DateTime(
@@ -909,6 +911,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         List<Map<String, dynamic>> baseFilteredCollections = collections.where((
           item,
         ) {
+          if (item['isCorrection'] == true) return false;
           final Unit unit = item['unit'];
           if (_filterType == 'All Time') return true;
           if (unit.collectedAt == null) return false;
@@ -934,16 +937,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         double totalCash = 0.0;
 
         for (var item in baseFilteredCollections) {
+          if (item['isCorrection'] == true) continue;
+          
           final Unit unit = item['unit'];
-          final bool isCorrection = item['isCorrection'] == true;
           totalCollected += unit.amount;
-          if (!isCorrection) {
-            if (unit.paymentMethod == 'UPI') {
-              totalUpi += unit.amount;
-            } else {
-              totalCash += unit.amount;
-            }
+          if (unit.paymentMethod == 'UPI') {
+            totalUpi += unit.amount;
+          } else {
+            totalCash += unit.amount;
           }
+          
           if (unit.collectedAt != null) {
             final d = DateTime(
               unit.collectedAt!.year,

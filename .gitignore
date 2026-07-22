@@ -72,3 +72,5 @@ google-services.json
 
 # Firebase Config
 lib/firebase_options.dart
+
+config.env

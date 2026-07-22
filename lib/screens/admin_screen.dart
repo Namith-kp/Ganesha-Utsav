@@ -83,7 +83,8 @@ class _TeamTab extends ConsumerWidget {
         }
 
         final allUsers = snapshot.data ?? [];
-        // Filter out guest users (they are created with name 'Web Guest' and empty email)
+        // Filter out automatically generated anonymous web guests.
+        // Authenticated users and manual team members will be shown.
         final collectors = allUsers.where((c) => c.name != 'Web Guest').toList();
         if (collectors.isEmpty) {
           return Center(

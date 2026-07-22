@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'router/app_router.dart';
 
@@ -61,10 +62,15 @@ void main() async {
   );
 
   // Initialize dotenv
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "config.env");
 
   // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Enable offline persistence for instant loading across app restarts
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+  );
 
   // Increase ImageCache size for panoramas
   PaintingBinding.instance.imageCache.maximumSizeBytes = 1024 * 1024 * 300;

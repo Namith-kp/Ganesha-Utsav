@@ -11,10 +11,21 @@ class SpendingService {
 
   Future<List<Spending>> getSpendings() async {
     try {
-      final snapshot = await _db
+      final query = _db
           .collection('spendings')
-          .orderBy('createdAt', descending: true)
-          .get();
+          .orderBy('createdAt', descending: true);
+      
+      QuerySnapshot snapshot;
+      try {
+        snapshot = await query.get(const GetOptions(source: Source.cache));
+        if (snapshot.docs.isNotEmpty) {
+          query.get(const GetOptions(source: Source.server)); // bg update
+        } else {
+          snapshot = await query.get();
+        }
+      } catch (_) {
+        snapshot = await query.get();
+      }
 
       return snapshot.docs.map((doc) => Spending.fromFirestore(doc)).toList();
     } catch (e) {

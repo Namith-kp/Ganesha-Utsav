@@ -69,47 +69,73 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-      ShellRoute(
-        navigatorKey: _shellNavigatorKey,
-        builder: (context, state, child) {
-          return MainScaffold(location: state.matchedLocation, child: child);
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return MainScaffold(
+            location: state.matchedLocation,
+            navigationShell: navigationShell,
+          );
         },
-        routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => const DashboardScreen(),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (context, state) => const DashboardScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/map',
-            builder: (context, state) {
-              final lat = double.tryParse(
-                state.uri.queryParameters['lat'] ?? '',
-              );
-              final lng = double.tryParse(
-                state.uri.queryParameters['lng'] ?? '',
-              );
-              return HomeScreen(initialLat: lat, initialLng: lng);
-            },
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/map',
+                builder: (context, state) {
+                  final lat = double.tryParse(state.uri.queryParameters['lat'] ?? '');
+                  final lng = double.tryParse(state.uri.queryParameters['lng'] ?? '');
+                  return HomeScreen(initialLat: lat, initialLng: lng);
+                },
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/reports',
-            builder: (context, state) => const ReportsScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/reports',
+                builder: (context, state) => const ReportsScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/tasks',
-            builder: (context, state) => const TasksScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/tasks',
+                builder: (context, state) => const TasksScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/leaderboard',
-            builder: (context, state) => const LeaderboardScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/leaderboard',
+                builder: (context, state) => const LeaderboardScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/admin',
-            builder: (context, state) => const AdminScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/admin',
+                builder: (context, state) => const AdminScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/profile',
-            builder: (context, state) => const ProfileScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+            ],
           ),
         ],
       ),
