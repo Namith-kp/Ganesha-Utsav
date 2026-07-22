@@ -17,19 +17,33 @@ class MainScaffold extends ConsumerWidget {
     final collectorAsync = ref.watch(collectorProfileProvider);
     final profile = collectorAsync.value;
 
-    if (profile == null) {
+    if (collectorAsync.isLoading) {
       return const Scaffold(
         backgroundColor: AppColors.bgBase,
         body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
       );
     }
 
-    final isAdmin = profile.isAdmin;
-    final hasAdminControlAccess = profile.hasAdminControlAccess;
-    final isCollector = profile.isCollector;
-    final canSeeTeamData = profile.canSeeTeamData;
-    final isTeamMember = profile.role == 'team_member';
-    final isViewer = profile.role == 'viewer';
+    if (profile == null) {
+      return Scaffold(
+        backgroundColor: AppColors.bgBase,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Failed to load profile. Please sign out and try again.', style: TextStyle(color: Colors.white)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  ref.read(authServiceProvider).signOut();
+                },
+                child: const Text('Sign Out'),
+              )
+            ],
+          ),
+        ),
+      );
+    }
 
     // Build the dynamic list of navigation items
     final items = <_NavItem>[];
@@ -40,31 +54,14 @@ class MainScaffold extends ConsumerWidget {
     // Everyone gets Map
     items.add(_NavItem(icon: LucideIcons.map, label: 'Map', route: '/map'));
 
-    if (isAdmin) {
-      items.add(
-        _NavItem(
-          icon: LucideIcons.barChart2,
-          label: 'Reports',
-          route: '/reports',
-        ),
-      );
-    } else if (isTeamMember || profile.isCoreTeamMember) {
-      items.add(
-        _NavItem(
-          icon: LucideIcons.barChart2,
-          label: 'Reports',
-          route: '/reports',
-        ),
-      );
-    } else if (isViewer) {
-      items.add(
-        _NavItem(
-          icon: LucideIcons.barChart2,
-          label: 'Reports',
-          route: '/reports',
-        ),
-      );
-    }
+    // Everyone gets Reports
+    items.add(
+      _NavItem(
+        icon: LucideIcons.barChart2,
+        label: 'Reports',
+        route: '/reports',
+      ),
+    );
 
     // Everyone gets Profile
     items.add(

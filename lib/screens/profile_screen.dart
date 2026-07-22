@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -28,10 +29,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   void _loadData() {
     final profile = ref.read(collectorProfileProvider).value;
-    if (profile != null && profile.role != 'viewer') {
+    if (profile != null && profile.role != 'viewer' && profile.id != 'web_guest') {
       _myCollectionsFuture = ref
           .read(buildingServiceProvider)
           .getDetailedCollections(filterCollectorId: profile.id);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    try {
+      await ref.read(authServiceProvider).signInWithGoogle();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sign in failed: $e')));
+      }
     }
   }
 
@@ -80,17 +91,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(collectorProfileProvider).value;
+    final authUser = ref.watch(authStateProvider).value;
+    final isGuest = authUser?.isAnonymous ?? true;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
         backgroundColor: AppColors.bgCard,
         actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.logOut, color: AppColors.crimson),
-            onPressed: _handleLogout,
-            tooltip: 'Logout',
-          ),
+          if (!isGuest)
+            IconButton(
+              icon: const Icon(LucideIcons.logOut, color: AppColors.crimson),
+              onPressed: _handleLogout,
+              tooltip: 'Logout',
+            ),
         ],
       ),
       body: profile == null
@@ -112,6 +126,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         profile.role,
                         profile.photoUrl,
                       ),
+                      if (isGuest) ...[
+                        const SizedBox(height: 32),
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: AppColors.bgCard,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Want to do more?',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Sign in with Google to request an upgraded role from the admin.',
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 24),
+                              ElevatedButton.icon(
+                                onPressed: _signInWithGoogle,
+                                icon: const Icon(LucideIcons.logIn),
+                                label: const Text('Sign in with Google'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (profile.hasAdminControlAccess) ...[
                         const SizedBox(height: 16),
                         ListTile(

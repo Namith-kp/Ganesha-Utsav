@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -29,6 +30,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Google Sign-In failed: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signInAsGuest() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final authService = ref.read(authServiceProvider);
+      await authService.signInAsGuest();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Guest Sign-In failed: $e')));
       }
     } finally {
       if (mounted) {
@@ -114,49 +138,66 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: CircularProgressIndicator(color: AppColors.accent),
                   )
                 else
-                  SizedBox(
-                    height: 54,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [AppColors.accent, AppColors.accentLight],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.accent.withValues(alpha: 0.35),
-                            blurRadius: 20,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: _signInWithGoogle,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                LucideIcons.logIn,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Sign in with Google',
-                                style: GoogleFonts.plusJakartaSans(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
+                  Column(
+                    children: [
+                      SizedBox(
+                        height: 54,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.accent, AppColors.accentLight],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accent.withValues(alpha: 0.35),
+                                blurRadius: 20,
+                                offset: const Offset(0, 4),
                               ),
                             ],
                           ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: _signInWithGoogle,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    LucideIcons.logIn,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Sign in with Google',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      if (kIsWeb) ...[
+                        const SizedBox(height: 16),
+                        TextButton(
+                          onPressed: _signInAsGuest,
+                          child: Text(
+                            'Continue as Guest',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppColors.textSecondary,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 const SizedBox(height: 64),
                 Center(

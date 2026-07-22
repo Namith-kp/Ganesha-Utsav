@@ -55,7 +55,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _tasksFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(color: AppColors.accent),
             );

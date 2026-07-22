@@ -451,91 +451,112 @@ class BuildingService {
   Future<List<Map<String, dynamic>>> getDetailedCollections({
     String? filterCollectorId,
   }) async {
-    // Fetch buildings, corrections, and collectors in parallel
-    final results = await Future.wait([
-      _firestore.collection('buildings').get(),
-      _firestore
+    QuerySnapshot? buildingsSnapshot;
+    QuerySnapshot? correctionsSnapshot;
+    QuerySnapshot? collectorsSnapshot;
+
+    try {
+      buildingsSnapshot = await _firestore.collection('buildings').get();
+    } catch (e) {
+      print('Error fetching buildings: $e');
+    }
+    
+    try {
+      correctionsSnapshot = await _firestore
           .collection('corrections')
           .orderBy('timestamp', descending: true)
-          .get(),
-      _firestore.collection('collectors').get(),
-    ]);
+          .get();
+    } catch (e) {
+      print('Error fetching corrections: $e');
+    }
 
-    final buildingsSnapshot = results[0] as QuerySnapshot;
-    final correctionsSnapshot = results[1] as QuerySnapshot;
-    final collectorsSnapshot = results[2] as QuerySnapshot;
+    try {
+      collectorsSnapshot = await _firestore.collection('collectors').get();
+    } catch (e) {
+      print('Error fetching collectors: $e');
+    }
 
     // Build a name lookup map for collectors
     final collectorNames = <String, String>{};
-    for (var doc in collectorsSnapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      collectorNames[doc.id] = data['name'] as String? ?? 'Unknown';
+    if (collectorsSnapshot != null) {
+      for (var doc in collectorsSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        collectorNames[doc.id] = data['name'] as String? ?? 'Unknown';
+      }
     }
 
     // ── Team funds ──────────────────────────────────────────────────────────
     final teamFundsData = <Map<String, dynamic>>[];
-    for (var doc in collectorsSnapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final role = data['role'] ?? 'viewer';
-      final isCore = data['isCoreTeamMember'] ?? false;
-      if (role == 'team_member' || isCore) {
-        if (data['fundStatus'] == 'paid') {
-          if (filterCollectorId != null &&
-              data['fundCollectedBy'] != filterCollectorId)
-            continue;
+    if (collectorsSnapshot != null) {
+      for (var doc in collectorsSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final role = data['role'] ?? 'viewer';
+        final isCore = data['isCoreTeamMember'] ?? false;
+        if (role == 'team_member' || isCore) {
+          if (data['fundStatus'] == 'paid') {
+            if (filterCollectorId != null &&
+                data['fundCollectedBy'] != filterCollectorId)
+              continue;
 
-          final dummyBuilding = Building(
-            id: 'team_funds',
-            name: 'Team Funds',
-            lat: 0,
-            lng: 0,
-            type: 'team_funds',
-            totalUnits: 1,
-            collectedCount: 1,
-            totalCollected: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
-            createdBy: 'system',
-            createdAt: DateTime.now(),
-          );
+            final dummyBuilding = Building(
+              id: 'team_funds',
+              name: 'Team Funds',
+              lat: 0,
+              lng: 0,
+              type: 'team_funds',
+              totalUnits: 1,
+              collectedCount: 1,
+              totalCollected: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
+              createdBy: 'system',
+              createdAt: DateTime.now(),
+            );
 
-          final dummyUnit = Unit(
-            id: doc.id,
-            buildingId: 'team_funds',
-            unitLabel: data['name'] ?? 'Team Member',
-            status: 'collected',
-            amount: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
-            paymentMethod: data['fundPaymentMethod'] ?? 'Cash',
-            collectedBy: data['fundCollectedBy'],
-            collectedAt: (data['fundCollectedAt'] as Timestamp?)?.toDate(),
-          );
+            final dummyUnit = Unit(
+              id: doc.id,
+              buildingId: 'team_funds',
+              unitLabel: data['name'] ?? 'Team Member',
+              status: 'collected',
+              amount: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
+              paymentMethod: data['fundPaymentMethod'] ?? 'Cash',
+              collectedBy: data['fundCollectedBy'],
+              collectedAt: (data['fundCollectedAt'] as Timestamp?)?.toDate(),
+            );
 
-          teamFundsData.add({'unit': dummyUnit, 'building': dummyBuilding});
+            teamFundsData.add({'unit': dummyUnit, 'building': dummyBuilding});
+          }
         }
       }
     }
 
     // ── Units ────────────────────────────────────────────────────────────────
-    final unitFutures = buildingsSnapshot.docs.map((buildingDoc) async {
+    final unitFutures = (buildingsSnapshot?.docs ?? []).map((buildingDoc) async {
       final building = Building.fromMap(
         buildingDoc.data() as Map<String, dynamic>,
         buildingDoc.id,
       );
-      final unitsSnapshot = await buildingDoc.reference
-          .collection('units')
-          .get();
+      
+      QuerySnapshot? unitsSnapshot;
+      try {
+        unitsSnapshot = await buildingDoc.reference.collection('units').get();
+      } catch (e) {
+        print('Error fetching units for building ${building.id}: $e');
+      }
 
       final List<Map<String, dynamic>> buildingCollections = [];
-      for (final unitDoc in unitsSnapshot.docs) {
-        final unit = Unit.fromMap(
-          unitDoc.data() as Map<String, dynamic>,
-          unitDoc.id,
-        );
-        if (unit.status == 'collected') {
-          if (filterCollectorId != null &&
-              unit.collectedBy != filterCollectorId)
-            continue;
+      if (unitsSnapshot != null) {
+        for (final unitDoc in unitsSnapshot.docs) {
+          final unit = Unit.fromMap(
+            unitDoc.data() as Map<String, dynamic>,
+            unitDoc.id,
+          );
+          if (unit.status == 'collected') {
+            if (filterCollectorId != null &&
+                unit.collectedBy != filterCollectorId)
+              continue;
 
-          // If the unit has been edited, show it at its original date with originalAmount
-          buildingCollections.add({'unit': unit, 'building': building});
+            // If the unit has been edited, show it at its original date with originalAmount
+            buildingCollections.add({'unit': unit, 'building': building});
+          }
         }
       }
       return buildingCollections;
@@ -558,71 +579,73 @@ class BuildingService {
       }
     }
 
-    for (var corrDoc in correctionsSnapshot.docs) {
-      final data = corrDoc.data() as Map<String, dynamic>;
-      final String unitId = data['unitId'] as String? ?? '';
-      final String buildingId = data['buildingId'] as String? ?? '';
-      final double delta = (data['delta'] as num?)?.toDouble() ?? 0.0;
-      final double oldAmount = (data['oldAmount'] as num?)?.toDouble() ?? 0.0;
-      final double newAmount = (data['newAmount'] as num?)?.toDouble() ?? 0.0;
-      final String correctedBy = data['correctedBy'] as String? ?? '';
-      final String correctedByName =
-          data['correctedByName'] as String? ??
-          collectorNames[correctedBy] ??
-          'Admin';
-      final DateTime? correctionTime = (data['timestamp'] as Timestamp?)
-          ?.toDate();
-      final String buildingName = data['buildingName'] as String? ?? 'Unknown';
-      final String unitLabel = data['unitLabel'] as String? ?? '';
+    if (correctionsSnapshot != null) {
+      for (var corrDoc in correctionsSnapshot.docs) {
+        final data = corrDoc.data() as Map<String, dynamic>;
+        final String unitId = data['unitId'] as String? ?? '';
+        final String buildingId = data['buildingId'] as String? ?? '';
+        final double delta = (data['delta'] as num?)?.toDouble() ?? 0.0;
+        final double oldAmount = (data['oldAmount'] as num?)?.toDouble() ?? 0.0;
+        final double newAmount = (data['newAmount'] as num?)?.toDouble() ?? 0.0;
+        final String correctedBy = data['correctedBy'] as String? ?? '';
+        final String correctedByName =
+            data['correctedByName'] as String? ??
+            collectorNames[correctedBy] ??
+            'Admin';
+        final DateTime? correctionTime = (data['timestamp'] as Timestamp?)
+            ?.toDate();
+        final String buildingName = data['buildingName'] as String? ?? 'Unknown';
+        final String unitLabel = data['unitLabel'] as String? ?? '';
 
-      // Skip if filtering by collector (corrections are admin-only, always shown to admins)
-      if (filterCollectorId != null) continue;
+        // Skip if filtering by collector (corrections are admin-only, always shown to admins)
+        if (filterCollectorId != null) continue;
 
-      // Look up the original real unit so the card can show its photo and open
-      // the correct info dialog on tap.
-      final realUnit = unitById[unitId];
-      final realBuilding = buildingByUnitId[unitId];
+        // Look up the original real unit so the card can show its photo and open
+        // the correct info dialog on tap.
+        final realUnit = unitById[unitId];
+        final realBuilding = buildingByUnitId[unitId];
 
-      // Build a placeholder building (fallback when real unit not in scope)
-      final correctionBuilding =
-          realBuilding ??
-          Building(
-            id: buildingId,
-            name: buildingName,
-            lat: 0,
-            lng: 0,
-            type: 'house',
-            totalUnits: 1,
-            collectedCount: 1,
-            totalCollected: newAmount,
-            createdBy: 'system',
-            createdAt: DateTime.now(),
-          );
+        // Build a placeholder building (fallback when real unit not in scope)
+        final correctionBuilding =
+            realBuilding ??
+            Building(
+              id: buildingId,
+              name: buildingName,
+              lat: 0,
+              lng: 0,
+              type: 'house',
+              totalUnits: 1,
+              collectedCount: 1,
+              totalCollected: newAmount,
+              createdBy: 'system',
+              createdAt: DateTime.now(),
+            );
 
-      // A virtual Unit that represents the DELTA — carries original photo for thumbnail
-      final deltaUnit = Unit(
-        id: '${unitId}_correction_${corrDoc.id}',
-        buildingId: buildingId,
-        unitLabel: unitLabel,
-        status: 'collected',
-        amount: delta, // positive or negative delta
-        collectedAt: correctionTime,
-        updatedAt: correctionTime,
-        originalAmount: oldAmount,
-        photoBase64: realUnit?.photoBase64, // reuse original unit's thumbnail
-      );
+        // A virtual Unit that represents the DELTA — carries original photo for thumbnail
+        final deltaUnit = Unit(
+          id: '${unitId}_correction_${corrDoc.id}',
+          buildingId: buildingId,
+          unitLabel: unitLabel,
+          status: 'collected',
+          amount: delta, // positive or negative delta
+          collectedAt: correctionTime,
+          updatedAt: correctionTime,
+          originalAmount: oldAmount,
+          photoBase64: realUnit?.photoBase64, // reuse original unit's thumbnail
+        );
 
-      collections.add({
-        'unit': deltaUnit,
-        'building': correctionBuilding,
-        'isCorrection': true,
-        'realUnit': realUnit, // original unit for tap dialog
-        'realBuilding': realBuilding ?? correctionBuilding,
-        'correctedByName': correctedByName,
-        'oldAmount': oldAmount,
-        'newAmount': newAmount,
-        'delta': delta,
-      });
+        collections.add({
+          'unit': deltaUnit,
+          'building': correctionBuilding,
+          'isCorrection': true,
+          'realUnit': realUnit, // original unit for tap dialog
+          'realBuilding': realBuilding ?? correctionBuilding,
+          'correctedByName': correctedByName,
+          'oldAmount': oldAmount,
+          'newAmount': newAmount,
+          'delta': delta,
+        });
+      }
     }
 
     // Sort descending by date (collectedAt for normal, correctionTime for deltas)

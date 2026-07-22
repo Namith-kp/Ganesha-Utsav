@@ -66,3 +66,9 @@ scripts/
 
 # Firebase Secrets
 google-services.json
+
+# Environment Variables
+.env
+
+# Firebase Config
+lib/firebase_options.dart

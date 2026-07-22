@@ -72,8 +72,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     final isViewer = profile?.role == 'viewer';
     
     int length = 1; // Collections
-    if (canSeeTeamData && !isViewer) length += 1; // Team Funds
-    if (canSeeTeamData || isViewer) length += 1; // Spendings
+    if (canSeeTeamData) length += 1; // Team Funds
+    length += 1; // Spendings for everyone
 
     if (_tabController?.length != length) {
       _tabController?.dispose();
@@ -262,10 +262,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
           controller: _tabController,
           tabs: [
             const Tab(text: 'Collections'),
-            if (profile?.canSeeTeamData == true && profile?.role != 'viewer')
+            if (profile?.canSeeTeamData == true)
               const Tab(text: 'Team Funds'),
-            if (profile?.canSeeTeamData == true || profile?.role == 'viewer')
-              const Tab(text: 'Spendings'),
+            const Tab(text: 'Spendings'),
           ],
         ),
         actions: [
@@ -301,15 +300,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             _collectionsScrollController,
             profile?.role == 'viewer',
           ),
-          if (profile?.canSeeTeamData == true && profile?.role != 'viewer')
-            _buildTeamFundsTab(isAdmin, profile?.id, profile?.role == 'viewer'),
-          if (profile?.canSeeTeamData == true || profile?.role == 'viewer')
-            _buildSpendingsTab(
-              isAdmin,
-              profile?.id,
-              profile?.name,
-              profile?.role == 'viewer',
-            ),
+          if (profile?.canSeeTeamData == true)
+            _buildTeamFundsTab(isAdmin, profile?.id, false),
+          _buildSpendingsTab(
+            isAdmin,
+            profile?.id,
+            profile?.name,
+            profile?.role == 'viewer',
+          ),
         ],
       ),
       floatingActionButton: _buildFloatingActionButton(isAdmin, profile),
@@ -320,9 +318,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     if (profile == null) return null;
     final int index = _tabController?.index ?? 0;
     final bool canSeeTeamData = profile.canSeeTeamData ?? false;
+    final bool hasTeamFunds = canSeeTeamData;
+    
+    final int teamFundsIndex = hasTeamFunds ? 1 : -1;
+    final int spendingsIndex = hasTeamFunds ? 2 : 1;
 
-    if (canSeeTeamData && index == 1 && isAdmin) {
-      // Team Funds Tab (Index 1 when canSeeTeamData is true)
+    final bool canAddSpending = profile.canSeeTeamData ?? false;
+    
+    if (index == teamFundsIndex && isAdmin) {
+      // Team Funds Tab
       return FloatingActionButton.extended(
         onPressed: _showAddManualMemberDialog,
         icon: const Icon(LucideIcons.userPlus),
@@ -330,8 +334,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         backgroundColor: const Color(0xFF3F3D96),
         foregroundColor: Colors.white,
       );
-    } else if (canSeeTeamData && index == 2) {
-      // Spendings Tab (Index 2 when canSeeTeamData is true)
+    } else if (index == spendingsIndex && canAddSpending) {
+      // Spendings Tab
       return FloatingActionButton.extended(
         onPressed: () async {
           final didSave = await showAddSpendingBottomSheet(
@@ -1923,7 +1927,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                           MaterialPageRoute(
                             builder: (_) => CollectorReportScreen(
                               collectorName: collector.name,
-                              collections: collectorItems[collector.id] ?? [],
+                              collectorId: collector.id,
                               isViewer: isViewer,
                             ),
                           ),

@@ -34,10 +34,15 @@ class AuthService {
 
   // Future all collectors
   Future<List<Collector>> getAllCollectors() async {
-    final snapshot = await _firestore.collection('collectors').get();
-    return snapshot.docs
-        .map((doc) => Collector.fromMap(doc.data(), doc.id))
-        .toList();
+    try {
+      final snapshot = await _firestore.collection('collectors').get();
+      return snapshot.docs
+          .map((doc) => Collector.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (e) {
+      print('Error fetching collectors: $e');
+      return [];
+    }
   }
 
   // Sign in with Google
@@ -77,6 +82,32 @@ class AuthService {
       return userCredential;
     } catch (e) {
       print("Google Sign in error: $e");
+      rethrow;
+    }
+  }
+
+  // Sign in as Guest (Web Only)
+  Future<auth.UserCredential?> signInAsGuest() async {
+    try {
+      final userCredential = await _firebaseAuth.signInAnonymously();
+
+      if (userCredential.user != null) {
+        final uid = userCredential.user!.uid;
+        final doc = await _firestore.collection('collectors').doc(uid).get();
+        if (!doc.exists) {
+          await _firestore.collection('collectors').doc(uid).set({
+            'name': 'Web Guest',
+            'email': '',
+            'photoUrl': null,
+            'role': 'viewer', // Default role for guests
+            'isCoreTeamMember': false,
+            'canAccessAdminControl': false,
+          });
+        }
+      }
+      return userCredential;
+    } catch (e) {
+      print("Guest Sign in error: $e");
       rethrow;
     }
   }

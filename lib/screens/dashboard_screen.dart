@@ -199,13 +199,16 @@ class DashboardScreen extends ConsumerWidget {
                 final donorName = _getDonorName(building, unit);
 
                 return GestureDetector(
-                  onTap: () => showUnitAmountForm(
-                    context,
-                    ref,
-                    building,
-                    unit,
-                    fromReports: true,
-                  ),
+                  onTap: () async {
+                    await showUnitAmountForm(
+                      context,
+                      ref,
+                      building,
+                      unit,
+                      fromReports: true,
+                    );
+                    ref.invalidate(dashboardDataProvider);
+                  },
                   child: Container(
                     width: 140,
                     height: 140,
@@ -292,13 +295,16 @@ class DashboardScreen extends ConsumerWidget {
                   final donorName = _getDonorName(building, unit);
 
                   return GestureDetector(
-                    onTap: () => showUnitAmountForm(
-                      context,
-                      ref,
-                      building,
-                      unit,
-                      fromReports: true,
-                    ),
+                    onTap: () async {
+                      await showUnitAmountForm(
+                        context,
+                        ref,
+                        building,
+                        unit,
+                        fromReports: true,
+                      );
+                      ref.invalidate(dashboardDataProvider);
+                    },
                     child: Container(
                       width: 140,
                       margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -466,8 +472,10 @@ class DashboardScreen extends ConsumerWidget {
 
     return Expanded(
       child: GestureDetector(
-        onTap: () =>
-            showUnitAmountForm(context, ref, building, unit, fromReports: true),
+        onTap: () async {
+          await showUnitAmountForm(context, ref, building, unit, fromReports: true);
+          ref.invalidate(dashboardDataProvider);
+        },
         child: Column(
           children: [
             CircleAvatar(
@@ -625,13 +633,16 @@ class DashboardScreen extends ConsumerWidget {
                   fontSize: 15,
                 ),
               ),
-              onTap: () => showUnitAmountForm(
-                context,
-                ref,
-                building,
-                unit,
-                fromReports: true,
-              ),
+              onTap: () async {
+                await showUnitAmountForm(
+                  context,
+                  ref,
+                  building,
+                  unit,
+                  fromReports: true,
+                );
+                ref.invalidate(dashboardDataProvider);
+              },
             ),
           );
         }),

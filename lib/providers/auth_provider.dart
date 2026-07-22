@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import '../services/auth_service.dart';
@@ -18,9 +19,20 @@ final collectorProfileProvider = FutureProvider<Collector?>((ref) async {
   final authUser = ref.watch(authStateProvider).value;
 
   if (authUser != null) {
-    return await ref
+    final profile = await ref
         .watch(authServiceProvider)
         .getCollectorProfile(authUser.uid);
+    if (profile != null) {
+      return profile;
+    } else {
+      // If profile doesn't exist (e.g. guest doc creation failed), return a fallback
+      return Collector(
+        id: authUser.uid,
+        name: 'Guest Viewer',
+        phone: '',
+        role: 'viewer',
+      );
+    }
   }
 
   return null;

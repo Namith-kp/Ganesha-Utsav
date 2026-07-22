@@ -157,8 +157,7 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                                 MaterialPageRoute(
                                   builder: (_) => CollectorReportScreen(
                                     collectorName: collector.name,
-                                    collections:
-                                        collectorItems[collector.id] ?? [],
+                                    collectorId: collector.id,
                                   ),
                                 ),
                               );

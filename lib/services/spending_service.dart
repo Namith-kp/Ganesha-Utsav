@@ -10,12 +10,17 @@ class SpendingService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   Future<List<Spending>> getSpendings() async {
-    final snapshot = await _db
-        .collection('spendings')
-        .orderBy('createdAt', descending: true)
-        .get();
+    try {
+      final snapshot = await _db
+          .collection('spendings')
+          .orderBy('createdAt', descending: true)
+          .get();
 
-    return snapshot.docs.map((doc) => Spending.fromFirestore(doc)).toList();
+      return snapshot.docs.map((doc) => Spending.fromFirestore(doc)).toList();
+    } catch (e) {
+      print('Error fetching spendings: $e');
+      return [];
+    }
   }
 
   Future<void> addSpending({

@@ -6,27 +6,58 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../models/building.dart';
 import '../models/unit.dart';
 import '../utils/building_dialogs.dart';
+import '../providers/map_provider.dart';
 import '../main.dart';
 
-class CollectorReportScreen extends ConsumerWidget {
+class CollectorReportScreen extends ConsumerStatefulWidget {
   final String collectorName;
-  final List<Map<String, dynamic>> collections;
+  final String collectorId;
   final bool isViewer;
 
   const CollectorReportScreen({
     super.key,
     required this.collectorName,
-    required this.collections,
+    required this.collectorId,
     this.isViewer = false,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    double totalCollected = 0.0;
-    for (var item in collections) {
-      final Unit unit = item['unit'];
-      totalCollected += unit.amount;
-    }
+  ConsumerState<CollectorReportScreen> createState() => _CollectorReportScreenState();
+}
+
+class _CollectorReportScreenState extends ConsumerState<CollectorReportScreen> {
+  Future<List<Map<String, dynamic>>>? _collectionsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  void _loadData() {
+    _collectionsFuture = ref
+        .read(buildingServiceProvider)
+        .getDetailedCollections(filterCollectorId: widget.collectorId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _collectionsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          return const Scaffold(
+            backgroundColor: AppColors.bgBase,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final collections = snapshot.data ?? [];
+        double totalCollected = 0.0;
+        for (var item in collections) {
+          final Unit unit = item['unit'];
+          totalCollected += unit.amount;
+        }
 
     return Scaffold(
       backgroundColor: AppColors.bgBase,
@@ -35,7 +66,7 @@ class CollectorReportScreen extends ConsumerWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
         title: Text(
-          '$collectorName Reports',
+          '${widget.collectorName} Reports',
           style: GoogleFonts.plusJakartaSans(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.w700,
@@ -44,7 +75,7 @@ class CollectorReportScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          if (!isViewer)
+          if (!widget.isViewer)
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Card(
@@ -171,21 +202,24 @@ class CollectorReportScreen extends ConsumerWidget {
                             ],
                           ),
                           trailing: Text(
-                            '₹${unit.amount}',
+                            '₹${unit.amount.toStringAsFixed(0)}',
                             style: GoogleFonts.plusJakartaSans(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                               color: AppColors.green,
                             ),
                           ),
-                          onTap: () {
-                            showUnitAmountForm(
+                          onTap: () async {
+                            await showUnitAmountForm(
                               context,
                               ref,
                               building,
                               unit,
                               fromReports: true,
                             );
+                            setState(() {
+                              _loadData();
+                            });
                           },
                         ),
                       );
@@ -194,6 +228,8 @@ class CollectorReportScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+      },
     );
   }
 }
