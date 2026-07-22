@@ -19,6 +19,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../main.dart';
+
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371e3; // metres
   final phi1 = lat1 * math.pi / 180;
@@ -26,9 +27,12 @@ double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   final deltaPhi = (lat2 - lat1) * math.pi / 180;
   final deltaLambda = (lon2 - lon1) * math.pi / 180;
 
-  final a = math.sin(deltaPhi / 2) * math.sin(deltaPhi / 2) +
-      math.cos(phi1) * math.cos(phi2) *
-      math.sin(deltaLambda / 2) * math.sin(deltaLambda / 2);
+  final a =
+      math.sin(deltaPhi / 2) * math.sin(deltaPhi / 2) +
+      math.cos(phi1) *
+          math.cos(phi2) *
+          math.sin(deltaLambda / 2) *
+          math.sin(deltaLambda / 2);
   final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
 
   return R * c;
@@ -38,7 +42,8 @@ class StreetViewScreen extends ConsumerStatefulWidget {
   final double lat;
   final double lon;
 
-  const StreetViewScreen({Key? key, required this.lat, required this.lon}) : super(key: key);
+  const StreetViewScreen({Key? key, required this.lat, required this.lon})
+    : super(key: key);
 
   @override
   _StreetViewScreenState createState() => _StreetViewScreenState();
@@ -65,7 +70,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
 
   void _navigateToNeighbor(String nextId) {
     if (_isTransitioning) return;
-    
+
     // Maintain geographic viewing direction across transitions
     final currentId = ref.read(currentPanoramaIdProvider);
     if (currentId != null) {
@@ -74,19 +79,19 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       if (currentNode != null && nextNode != null) {
         double currentHeading = currentNode.heading * (180.0 / math.pi);
         double geographicDirection = _cameraLongitude.value + currentHeading;
-        
+
         double nextHeading = nextNode.heading * (180.0 / math.pi);
         _initialLongitude = geographicDirection - nextHeading;
         _initialLongitude = (_initialLongitude + 540) % 360 - 180;
-        
+
         // Update dial instantly so it doesn't snap
         _cameraLongitude.value = _initialLongitude;
       }
     }
-    
+
     // Set background to the new image, trigger state update to start prefetching
     ref.read(currentPanoramaIdProvider.notifier).updateId(nextId);
-    
+
     setState(() {
       _backgroundId = nextId;
       _isTransitioning = true;
@@ -105,7 +110,10 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     });
   }
 
-  void _showCreateBuildingDialog(BuildContext context, latlong.LatLng targetLatLng) {
+  void _showCreateBuildingDialog(
+    BuildContext context,
+    latlong.LatLng targetLatLng,
+  ) {
     final nameController = TextEditingController();
     final unitsController = TextEditingController();
     List<TextEditingController> unitLabelControllers = [];
@@ -115,10 +123,12 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
     void updateUnitControllers(String value) {
       final units = int.tryParse(value) ?? 0;
       if (units > 50) return; // safeguard
-      
+
       if (unitLabelControllers.length < units) {
         for (int i = unitLabelControllers.length; i < units; i++) {
-          unitLabelControllers.add(TextEditingController(text: 'House ${i + 1}'));
+          unitLabelControllers.add(
+            TextEditingController(text: 'House ${i + 1}'),
+          );
         }
       } else if (unitLabelControllers.length > units) {
         unitLabelControllers.length = units;
@@ -140,7 +150,9 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                     children: [
                       TextField(
                         controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Building Name / Landmark'),
+                        decoration: const InputDecoration(
+                          labelText: 'Building Name / Landmark',
+                        ),
                       ),
                       const SizedBox(height: 16),
                       SwitchListTile(
@@ -155,7 +167,9 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                         TextField(
                           controller: unitsController,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Number of Units'),
+                          decoration: const InputDecoration(
+                            labelText: 'Number of Units',
+                          ),
                           onChanged: (val) {
                             setState(() {
                               updateUnitControllers(val);
@@ -188,85 +202,104 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(ctx).pop(),
                   child: const Text('CANCEL'),
                 ),
                 ElevatedButton(
-                  onPressed: isSubmitting ? null : () async {
-                    if (nameController.text.trim().isEmpty) return;
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (nameController.text.trim().isEmpty) return;
 
-                    final authUser = ref.read(authStateProvider).value;
-                    if (authUser == null) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Not logged in')));
-                      return;
-                    }
+                          final authUser = ref.read(authStateProvider).value;
+                          if (authUser == null) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(content: Text('Not logged in')),
+                            );
+                            return;
+                          }
 
-                    final buildingService = BuildingService();
-                    
-                    setState(() => isSubmitting = true);
-                    
-                    try {
-                      if (isApartment) {
-                        final units = int.tryParse(unitsController.text) ?? 1;
-                        final labels = unitLabelControllers.map((c) => c.text.trim()).toList();
-                        if (labels.isEmpty) {
-                          for(int i=0; i<units; i++) labels.add('House ${i+1}');
-                        }
+                          final buildingService = BuildingService();
 
-                        await buildingService.createMultiUnitBuilding(
-                          lat: targetLatLng.latitude,
-                          lng: targetLatLng.longitude,
-                          name: nameController.text.trim(),
-                          unitLabels: labels,
-                          createdBy: authUser.uid,
-                        );
-                      } else {
-                        await buildingService.createSingleUnitBuilding(
-                          lat: targetLatLng.latitude,
-                          lng: targetLatLng.longitude,
-                          name: nameController.text.trim(),
-                          type: 'house',
-                          createdBy: authUser.uid,
-                        );
-                      }
-                      if (ctx.mounted) {
-                        Navigator.of(ctx).pop();
-                      }
-                    } catch (e) {
-                      setState(() => isSubmitting = false);
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('Error adding building: $e')),
-                        );
-                      }
-                    }
-                  },
-                  child: isSubmitting 
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
-                    : const Text('SAVE'),
+                          setState(() => isSubmitting = true);
+
+                          try {
+                            if (isApartment) {
+                              final units =
+                                  int.tryParse(unitsController.text) ?? 1;
+                              final labels = unitLabelControllers
+                                  .map((c) => c.text.trim())
+                                  .toList();
+                              if (labels.isEmpty) {
+                                for (int i = 0; i < units; i++)
+                                  labels.add('House ${i + 1}');
+                              }
+
+                              await buildingService.createMultiUnitBuilding(
+                                lat: targetLatLng.latitude,
+                                lng: targetLatLng.longitude,
+                                name: nameController.text.trim(),
+                                unitLabels: labels,
+                                createdBy: authUser.uid,
+                              );
+                            } else {
+                              await buildingService.createSingleUnitBuilding(
+                                lat: targetLatLng.latitude,
+                                lng: targetLatLng.longitude,
+                                name: nameController.text.trim(),
+                                type: 'house',
+                                createdBy: authUser.uid,
+                              );
+                            }
+                            if (ctx.mounted) {
+                              Navigator.of(ctx).pop();
+                            }
+                          } catch (e) {
+                            setState(() => isSubmitting = false);
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error adding building: $e'),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('SAVE'),
                 ),
               ],
             );
-          }
+          },
         );
-      }
+      },
     );
   }
 
   // _showBuildingDetailsDialog replaced by shared showBuildingDetailsBottomSheet
 
-  List<Hotspot> _buildHotspots(StreetViewNode? currentNode, List<Building> buildings) {
+  List<Hotspot> _buildHotspots(
+    StreetViewNode? currentNode,
+    List<Building> buildings,
+  ) {
     if (currentNode == null) return [];
-    
+
     final profile = ref.read(collectorProfileProvider).value;
     final canSeeAllTags = profile?.canSeeAllTags ?? false;
 
     List<Hotspot> hotspots = [];
     final distanceCalc = const latlong.Distance();
-    
+
     // First, collect data for all buildings within range
     List<Map<String, dynamic>> visibleData = [];
-    
+
     for (var building in buildings) {
       if (!canSeeAllTags && building.collectedCount == 0) continue;
 
@@ -274,138 +307,167 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
         latlong.LatLng(currentNode.lat, currentNode.lon),
         latlong.LatLng(building.lat, building.lng),
       );
-      
+
       // Limit range to 40 meters so tags don't disappear when moving between nearby nodes
       if (dist > 16) continue;
-      
+
       double bearing = distanceCalc.bearing(
         latlong.LatLng(currentNode.lat, currentNode.lon),
         latlong.LatLng(building.lat, building.lng),
       );
-      
+
       double headingDegrees = currentNode.heading * (180.0 / math.pi);
       double relativeYaw = bearing - headingDegrees;
       relativeYaw = (relativeYaw + 540) % 360 - 180;
-      
-      visibleData.add({
-        'building': building,
-        'dist': dist,
-        'yaw': relativeYaw,
-      });
+
+      visibleData.add({'building': building, 'dist': dist, 'yaw': relativeYaw});
     }
-    
+
     // Sort by distance (closest first)
-    visibleData.sort((a, b) => (a['dist'] as double).compareTo(b['dist'] as double));
-    
+    visibleData.sort(
+      (a, b) => (a['dist'] as double).compareTo(b['dist'] as double),
+    );
+
     // Filter out occluded buildings and build hotspots
     List<Map<String, dynamic>> unoccludedData = [];
-    
+
     for (var data in visibleData) {
       double yaw = data['yaw'];
       double dist = data['dist'];
       bool occluded = false;
-      
+
       for (var closer in unoccludedData) {
         double closerYaw = closer['yaw'];
         double closerDist = closer['dist'];
-        
-        // Calculate dynamic angular width based on distance. 
+
+        // Calculate dynamic angular width based on distance.
         // Assume an average building is 8 meters wide.
-        double angularWidth = (math.atan2(8.0 / 2, closerDist == 0 ? 0.1 : closerDist) * (180.0 / math.pi));
-        
-        // The closer a building is, the wider the angle it blocks. 
+        double angularWidth =
+            (math.atan2(8.0 / 2, closerDist == 0 ? 0.1 : closerDist) *
+            (180.0 / math.pi));
+
+        // The closer a building is, the wider the angle it blocks.
         // We clamp it between 15 and 90 degrees to be safe.
         double dynamicThreshold = (angularWidth * 1.5).clamp(15.0, 90.0);
-        
+
         double diff = (yaw - closerYaw).abs();
         if (diff > 180) diff = 360 - diff;
-        
+
         // If it's behind a closer building and within its angular shadow, hide it!
         if (diff < dynamicThreshold) {
           occluded = true;
           break;
         }
       }
-      
+
       if (!occluded) {
         unoccludedData.add(data);
-        
+
         var building = data['building'];
         double dist = data['dist'];
-        
+
         // Fixed scale to ensure all tags are the same size regardless of where they were created
         double scaleFactor = 1.0;
         bool isFullyCollected = building.collectedCount >= building.totalUnits;
         bool hasCollections = building.collectedCount > 0;
-        
+
         // Calculate 3D Pitch (Vertical Angle)
-        double heightAboveCamera = 3.0; 
+        double heightAboveCamera = 3.0;
         double pitchRad = math.atan2(heightAboveCamera, dist == 0 ? 0.1 : dist);
         double pitchDeg = pitchRad * (180.0 / math.pi);
-        
+
         hotspots.add(
           Hotspot(
-            latitude: pitchDeg, // Dynamically set vertical height based on distance!
+            latitude:
+                pitchDeg, // Dynamically set vertical height based on distance!
             longitude: yaw,
             width: 250, // Fixed layout width to prevent overflow
-          height: 150, // Fixed layout height to prevent overflow
-          widget: Transform.scale(
-            scale: scaleFactor,
-            child: Center(
-              child: GestureDetector(
-                onTap: () => showCollectionBottomSheet(context, ref, building),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isFullyCollected ? AppColors.green.withOpacity(0.9) : (hasCollections ? AppColors.amber.withOpacity(0.9) : AppColors.crimson.withOpacity(0.9)),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white, width: 2),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
-                      ]
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          building.name,
-                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                          textAlign: TextAlign.center,
-                          maxLines: 2, // Allow name to wrap
-                          overflow: TextOverflow.ellipsis,
+            height: 150, // Fixed layout height to prevent overflow
+            widget: Transform.scale(
+              scale: scaleFactor,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () =>
+                      showCollectionBottomSheet(context, ref, building),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
                         ),
-                        if (hasCollections && building.totalCollected > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              '₹${building.totalCollected.toStringAsFixed(0)}',
-                              style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        decoration: BoxDecoration(
+                          color: isFullyCollected
+                              ? AppColors.green.withOpacity(0.9)
+                              : (hasCollections
+                                    ? AppColors.amber.withOpacity(0.9)
+                                    : AppColors.crimson.withOpacity(0.9)),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.5),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
                             ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              building.name,
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2, // Allow name to wrap
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (hasCollections && building.totalCollected > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '₹${building.totalCollected.toStringAsFixed(0)}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_drop_down,
+                        color: isFullyCollected
+                            ? AppColors.green
+                            : (hasCollections
+                                  ? AppColors.amber
+                                  : AppColors.crimson),
+                        size: 30,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.5),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
                           ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_drop_down,
-                    color: isFullyCollected ? AppColors.green : (hasCollections ? AppColors.amber : AppColors.crimson),
-                    size: 30,
-                    shadows: [
-                      Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(0, 2))
+                        ],
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-          ),
-        )
-      );
+        );
       }
     }
-    
+
     return hotspots;
   }
 
@@ -413,9 +475,11 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
   Widget build(BuildContext context) {
     // Watch this to trigger the prefetching logic silently
     ref.watch(prefetchControllerProvider);
-    
+
     final currentId = ref.watch(currentPanoramaIdProvider);
-    final currentNode = currentId != null ? ref.watch(nodeByIdProvider(currentId)) : null;
+    final currentNode = currentId != null
+        ? ref.watch(nodeByIdProvider(currentId))
+        : null;
     final buildingsAsync = ref.watch(buildingsProvider);
     final buildings = buildingsAsync.value ?? [];
 
@@ -424,33 +488,43 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       return nodesAsync.when(
         data: (nodes) {
           if (nodes.isEmpty) {
-            return const Scaffold(body: Center(child: Text("No panoramas available.")));
+            return const Scaffold(
+              body: Center(child: Text("No panoramas available.")),
+            );
           }
-          
+
           StreetViewNode? closestNode;
           double minDistance = double.infinity;
           for (var node in nodes) {
-            double dist = _calculateDistance(widget.lat, widget.lon, node.lat, node.lon);
+            double dist = _calculateDistance(
+              widget.lat,
+              widget.lon,
+              node.lat,
+              node.lon,
+            );
             if (dist < minDistance) {
               minDistance = dist;
               closestNode = node;
             }
           }
-          
+
           if (closestNode != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted && _foregroundId == null) {
-                ref.read(currentPanoramaIdProvider.notifier).updateId(closestNode!.id);
+                ref
+                    .read(currentPanoramaIdProvider.notifier)
+                    .updateId(closestNode!.id);
                 setState(() {
                   _foregroundId = closestNode!.id;
-                  
+
                   // Orient camera towards the requested location (widget.lat, widget.lon)
                   final distanceCalc = const latlong.Distance();
                   final bearing = distanceCalc.bearing(
                     latlong.LatLng(closestNode!.lat, closestNode!.lon),
                     latlong.LatLng(widget.lat, widget.lon),
                   );
-                  double headingDegrees = closestNode!.heading * (180.0 / math.pi);
+                  double headingDegrees =
+                      closestNode!.heading * (180.0 / math.pi);
                   _initialLongitude = bearing - headingDegrees;
                   _initialLongitude = (_initialLongitude + 540) % 360 - 180;
                   _cameraLongitude.value = _initialLongitude;
@@ -458,14 +532,25 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               }
             });
           }
-          
+
           return const Scaffold(
             backgroundColor: Colors.black,
             body: Center(child: CircularProgressIndicator()),
           );
         },
-        loading: () => const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator())),
-        error: (err, stack) => Scaffold(backgroundColor: Colors.black, body: Center(child: Text('Error loading panoramas: $err', style: const TextStyle(color: Colors.white)))),
+        loading: () => const Scaffold(
+          backgroundColor: Colors.black,
+          body: Center(child: CircularProgressIndicator()),
+        ),
+        error: (err, stack) => Scaffold(
+          backgroundColor: Colors.black,
+          body: Center(
+            child: Text(
+              'Error loading panoramas: $err',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ),
       );
     }
 
@@ -487,12 +572,19 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
               animSpeed: 0.0,
               sensorControl: SensorControl.none,
               sensitivity: 2.5,
-              hotspots: _backgroundId != null ? _buildHotspots(ref.read(nodeByIdProvider(_backgroundId!)), buildings) : [],
+              hotspots: _backgroundId != null
+                  ? _buildHotspots(
+                      ref.read(nodeByIdProvider(_backgroundId!)),
+                      buildings,
+                    )
+                  : [],
               child: Image(
-                image: CachedNetworkImageProvider('$baseUrl/$_backgroundId.webp'),
+                image: CachedNetworkImageProvider(
+                  '$baseUrl/$_backgroundId.webp',
+                ),
               ),
             ),
-          
+
           // Foreground Layer (fades out during transition)
           AnimatedOpacity(
             opacity: _isTransitioning ? 0.0 : 1.0,
@@ -512,47 +604,55 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                 final profile = ref.read(collectorProfileProvider).value;
                 if (profile == null || !profile.canCreate) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('You do not have permission to create tags.')),
+                    const SnackBar(
+                      content: Text(
+                        'You do not have permission to create tags.',
+                      ),
+                    ),
                   );
                   return;
                 }
-                
+
                 if (currentNode == null) return;
-                
+
                 // Convert heading from radians to degrees
                 double headingDegrees = currentNode.heading * (180.0 / math.pi);
-                
+
                 // Absolute bearing of the tap
                 double absoluteBearing = headingDegrees + longitude;
-                
+
                 // Estimate distance based on pitch (latitude)
-                double distanceInMeters = 6.0; // default for tapping above horizon
+                double distanceInMeters =
+                    6.0; // default for tapping above horizon
                 if (latitude < 0) {
                   // User tapped below horizon
                   double pitchRad = latitude.abs() * (math.pi / 180.0);
-                  if (pitchRad > 0.05) { // avoid division by near-zero
+                  if (pitchRad > 0.05) {
+                    // avoid division by near-zero
                     distanceInMeters = 2.5 / math.tan(pitchRad);
                   }
                 }
-                
+
                 // Clamp distance to reasonable limits
                 distanceInMeters = distanceInMeters.clamp(2.0, 16.0);
-                
+
                 final distanceCalc = const latlong.Distance();
                 final targetLatLng = distanceCalc.offset(
                   latlong.LatLng(currentNode.lat, currentNode.lon),
                   distanceInMeters,
                   absoluteBearing,
                 );
-                
+
                 _showCreateBuildingDialog(context, targetLatLng);
               },
               child: Image(
-                image: CachedNetworkImageProvider('$baseUrl/$_foregroundId.webp'),
+                image: CachedNetworkImageProvider(
+                  '$baseUrl/$_foregroundId.webp',
+                ),
               ),
             ),
           ),
-          
+
           // Fixed Bottom Navigation Dial (Google Street View Style)
           if (currentNode != null && !_isTransitioning)
             Positioned(
@@ -575,32 +675,42 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                           clipBehavior: Clip.none,
                           alignment: Alignment.center,
                           children: currentNode.neighbors.map((neighborId) {
-                            final neighborNode = ref.read(nodeByIdProvider(neighborId));
-                            if (neighborNode == null) return const SizedBox.shrink();
-                            
+                            final neighborNode = ref.read(
+                              nodeByIdProvider(neighborId),
+                            );
+                            if (neighborNode == null)
+                              return const SizedBox.shrink();
+
                             // Calculate geographic bearing
                             final distance = const latlong.Distance();
                             final bearing = distance.bearing(
                               latlong.LatLng(currentNode.lat, currentNode.lon),
-                              latlong.LatLng(neighborNode.lat, neighborNode.lon),
+                              latlong.LatLng(
+                                neighborNode.lat,
+                                neighborNode.lon,
+                              ),
                             );
-                            
+
                             // Convert heading from radians to degrees
-                            double headingDegrees = currentNode.heading * (180.0 / math.pi);
-                            
+                            double headingDegrees =
+                                currentNode.heading * (180.0 / math.pi);
+
                             // Calculate base yaw (where the node is when camera looks straight)
                             double baseYaw = bearing - headingDegrees;
-                            
+
                             // Calculate relative angle on the screen
                             double relativeAngle = baseYaw - cameraLon;
-                            
+
                             // Convert to radians for UI rotation
                             double angleRad = relativeAngle * (math.pi / 180.0);
-                            
+
                             return Transform(
                               transform: Matrix4.identity()
                                 ..rotateZ(angleRad)
-                                ..translate(0.0, -110.0), // Push outwards by radius
+                                ..translate(
+                                  0.0,
+                                  -110.0,
+                                ), // Push outwards by radius
                               alignment: Alignment.center,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
@@ -613,7 +723,11 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                                     size: 100,
                                     color: Colors.white,
                                     shadows: [
-                                      Shadow(color: Colors.black87, blurRadius: 15, offset: Offset(0, 5))
+                                      Shadow(
+                                        color: Colors.black87,
+                                        blurRadius: 15,
+                                        offset: Offset(0, 5),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -627,7 +741,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                 ),
               ),
             ),
-          
+
           // Overlay information
           if (currentNode != null && currentNode.address.isNotEmpty)
             Positioned(
@@ -646,13 +760,17 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                   children: [
                     Text(
                       currentNode.address,
-                      style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.plusJakartaSans(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            
+
           // Minimap
           if (currentNode != null)
             Positioned(
@@ -669,7 +787,11 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                     border: Border.all(color: Colors.white, width: 2),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
-                      BoxShadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 4)),
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 8,
+                        offset: Offset(0, 4),
+                      ),
                     ],
                   ),
                   child: ClipRRect(
@@ -678,7 +800,10 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                       child: FlutterMap(
                         key: ValueKey('minimap_${currentNode.id}'),
                         options: MapOptions(
-                          initialCenter: latlong.LatLng(currentNode.lat, currentNode.lon),
+                          initialCenter: latlong.LatLng(
+                            currentNode.lat,
+                            currentNode.lon,
+                          ),
                           initialZoom: 18.0,
                           interactionOptions: const InteractionOptions(
                             flags: InteractiveFlag.none,
@@ -686,7 +811,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                         ),
                         children: [
                           TileLayer(
-                            urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                            urlTemplate:
+                                'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
                             userAgentPackageName: 'com.Dcross.ganeshtracker',
                           ),
                           MarkerLayer(
@@ -694,32 +820,46 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                               Color pinColor;
                               if (building.collectedCount == 0) {
                                 pinColor = AppColors.crimson;
-                              } else if (building.collectedCount >= building.totalUnits) {
+                              } else if (building.collectedCount >=
+                                  building.totalUnits) {
                                 pinColor = AppColors.green;
                               } else {
                                 pinColor = AppColors.amber;
                               }
                               return Marker(
-                                point: latlong.LatLng(building.lat, building.lng),
+                                point: latlong.LatLng(
+                                  building.lat,
+                                  building.lng,
+                                ),
                                 width: 40,
                                 height: 40,
-                                child: Icon(Icons.location_on, color: pinColor, size: 24),
+                                child: Icon(
+                                  Icons.location_on,
+                                  color: pinColor,
+                                  size: 24,
+                                ),
                               );
                             }).toList(),
                           ),
                           MarkerLayer(
                             markers: [
                               Marker(
-                                point: latlong.LatLng(currentNode.lat, currentNode.lon),
+                                point: latlong.LatLng(
+                                  currentNode.lat,
+                                  currentNode.lon,
+                                ),
                                 width: 60,
                                 height: 60,
                                 child: ValueListenableBuilder<double>(
                                   valueListenable: _cameraLongitude,
                                   builder: (context, cameraLon, child) {
-                                    double headingDegrees = currentNode.heading * (180.0 / math.pi);
-                                    double absoluteBearing = headingDegrees + cameraLon;
-                                    double angleRad = absoluteBearing * (math.pi / 180.0);
-                                    
+                                    double headingDegrees =
+                                        currentNode.heading * (180.0 / math.pi);
+                                    double absoluteBearing =
+                                        headingDegrees + cameraLon;
+                                    double angleRad =
+                                        absoluteBearing * (math.pi / 180.0);
+
                                     return Transform.rotate(
                                       angle: angleRad,
                                       child: SizedBox(
@@ -741,8 +881,16 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
                                               decoration: BoxDecoration(
                                                 color: Colors.blue,
                                                 shape: BoxShape.circle,
-                                                border: Border.all(color: Colors.white, width: 2),
-                                                boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black45)],
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 2,
+                                                ),
+                                                boxShadow: const [
+                                                  BoxShadow(
+                                                    blurRadius: 4,
+                                                    color: Colors.black45,
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ],
@@ -772,14 +920,11 @@ class FieldOfViewPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.height / 2;
-    
+
     // Intense blue gradient for visibility
     final fillPaint = Paint()
       ..shader = RadialGradient(
-        colors: [
-          Colors.blue.withOpacity(0.9),
-          Colors.blue.withOpacity(0.3),
-        ],
+        colors: [Colors.blue.withOpacity(0.9), Colors.blue.withOpacity(0.3)],
         stops: const [0.3, 1.0],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
 
@@ -794,7 +939,7 @@ class FieldOfViewPainter extends CustomPainter {
     // 80 degrees cone for better visibility
     final startAngle = -130.0 * math.pi / 180.0;
     final sweepAngle = 80.0 * math.pi / 180.0;
-    
+
     path.arcTo(
       Rect.fromCircle(center: center, radius: radius),
       startAngle,

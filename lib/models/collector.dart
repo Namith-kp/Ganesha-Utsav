@@ -8,7 +8,7 @@ class Collector {
   final bool isCoreTeamMember;
   final bool canAccessAdminControl;
   final String? photoUrl;
-  
+
   // Team Fund fields
   final String? fundStatus; // 'paid' or 'pending'
   final double? fundAmount;
@@ -47,8 +47,8 @@ class Collector {
       fundStatus: map['fundStatus'] as String? ?? 'pending',
       fundAmount: (map['fundAmount'] as num?)?.toDouble(),
       fundPaymentMethod: map['fundPaymentMethod'] as String?,
-      fundCollectedAt: map['fundCollectedAt'] != null 
-          ? (map['fundCollectedAt'] as dynamic).toDate() 
+      fundCollectedAt: map['fundCollectedAt'] != null
+          ? (map['fundCollectedAt'] as dynamic).toDate()
           : null,
       fundCollectedBy: map['fundCollectedBy'] as String?,
     );
@@ -77,9 +77,10 @@ class Collector {
   bool get isTeamMember => role == 'team_member';
   bool get isViewer => role == 'viewer';
   bool get hasAdminControlAccess => isAdmin && canAccessAdminControl;
-  
+
   bool get canCreate => isAdmin || isCollector;
-  bool get canSeeAllTags => isAdmin || isCollector || isTeamMember || isCoreTeamMember;
+  bool get canSeeAllTags =>
+      isAdmin || isCollector || isTeamMember || isCoreTeamMember;
   bool get canSeeTeamData => isAdmin || isTeamMember || isCoreTeamMember;
   bool get canAccessAR => isAdmin || isCollector;
   bool get canAccessReports => isAdmin || isCollector || isTeamMember;

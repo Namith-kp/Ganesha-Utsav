@@ -22,24 +22,45 @@ class HomeScreen extends ConsumerStatefulWidget {
   final double? initialLng;
   final String? targetBuildingId;
 
-  const HomeScreen({Key? key, this.initialLat, this.initialLng, this.targetBuildingId}) : super(key: key);
+  const HomeScreen({
+    Key? key,
+    this.initialLat,
+    this.initialLng,
+    this.targetBuildingId,
+  }) : super(key: key);
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   String _selectedFilter = 'all';
   bool _hasZoomedToTarget = false;
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
-    final latTween = Tween<double>(begin: _mapController.camera.center.latitude, end: destLocation.latitude);
-    final lngTween = Tween<double>(begin: _mapController.camera.center.longitude, end: destLocation.longitude);
-    final zoomTween = Tween<double>(begin: _mapController.camera.zoom, end: destZoom);
+    final latTween = Tween<double>(
+      begin: _mapController.camera.center.latitude,
+      end: destLocation.latitude,
+    );
+    final lngTween = Tween<double>(
+      begin: _mapController.camera.center.longitude,
+      end: destLocation.longitude,
+    );
+    final zoomTween = Tween<double>(
+      begin: _mapController.camera.zoom,
+      end: destZoom,
+    );
 
-    final controller = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
-    final Animation<double> animation = CurvedAnimation(parent: controller, curve: Curves.fastOutSlowIn);
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    final Animation<double> animation = CurvedAnimation(
+      parent: controller,
+      curve: Curves.fastOutSlowIn,
+    );
 
     controller.addListener(() {
       _mapController.move(
@@ -49,7 +70,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     });
 
     animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
         controller.dispose();
       }
     });
@@ -74,15 +96,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('🙏', style: TextStyle(fontSize: 20)),
-            const SizedBox(width: 8),
             Flexible(
               child: ShaderMask(
                 shaderCallback: (bounds) => const LinearGradient(
                   colors: [AppColors.accent, AppColors.accentLight],
                 ).createShader(bounds),
                 child: Text(
-                  'Ganesha Tracker',
+                  'Ganesha Funds Tracker',
                   style: GoogleFonts.plusJakartaSans(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
@@ -145,15 +165,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     pinchZoomThreshold: 0.1,
                     pinchMoveThreshold: 8,
                   ),
-                  initialCenter: (widget.initialLat != null && widget.initialLng != null)
+                  initialCenter:
+                      (widget.initialLat != null && widget.initialLng != null)
                       ? LatLng(widget.initialLat!, widget.initialLng!)
                       : initialCenter,
                   initialZoom: widget.targetBuildingId != null ? 17.0 : 18.0,
                   onMapReady: () {
-                    if (widget.targetBuildingId != null && !_hasZoomedToTarget) {
+                    if (widget.targetBuildingId != null &&
+                        !_hasZoomedToTarget) {
                       _hasZoomedToTarget = true;
                       Future.delayed(const Duration(milliseconds: 300), () {
-                        if (mounted && widget.initialLat != null && widget.initialLng != null) {
+                        if (mounted &&
+                            widget.initialLat != null &&
+                            widget.initialLng != null) {
                           _animatedMapMove(
                             LatLng(widget.initialLat!, widget.initialLng!),
                             19.5,
@@ -177,14 +201,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                       showCreateBuildingDialog(context, ref, point);
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('You do not have permission to create tags.')),
+                        const SnackBar(
+                          content: Text(
+                            'You do not have permission to create tags.',
+                          ),
+                        ),
                       );
                     }
                   },
                 ),
                 children: [
                   TileLayer(
-                    urlTemplate: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                    urlTemplate:
+                        'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
                     userAgentPackageName: 'com.Dcross.ganeshtracker',
                     // Keep nearby tiles in memory and skip per-tile fade
                     // animations so panning and zooming stay responsive.
@@ -210,7 +239,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
                     children: [
                       _buildFilterChip('All', 'all', AppColors.accent),
                       const SizedBox(width: 8),
-                      _buildFilterChip('Not Collected', 'red', AppColors.crimson),
+                      _buildFilterChip(
+                        'Not Collected',
+                        'red',
+                        AppColors.crimson,
+                      ),
                       const SizedBox(width: 8),
                       _buildFilterChip('Pending', 'orange', AppColors.amber),
                       const SizedBox(width: 8),
@@ -223,7 +256,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Error getting location: $err')),
+        error: (err, stack) =>
+            Center(child: Text('Error getting location: $err')),
       ),
     );
   }
@@ -231,11 +265,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
   Widget _buildFilterChip(String label, String filterValue, Color color) {
     final isSelected = _selectedFilter == filterValue;
     return FilterChip(
-      label: Text(label, style: GoogleFonts.plusJakartaSans(
-        color: isSelected ? Colors.white : AppColors.textSecondary, 
-        fontSize: 13,
-        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-      )),
+      label: Text(
+        label,
+        style: GoogleFonts.plusJakartaSans(
+          color: isSelected ? Colors.white : AppColors.textSecondary,
+          fontSize: 13,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
       selected: isSelected,
       selectedColor: color,
       backgroundColor: AppColors.bgCard.withOpacity(0.9),
@@ -244,7 +281,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
-        side: BorderSide(color: isSelected ? color : AppColors.border, width: 1),
+        side: BorderSide(
+          color: isSelected ? color : AppColors.border,
+          width: 1,
+        ),
       ),
       onSelected: (bool selected) {
         setState(() {
@@ -260,17 +300,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
     List<Building> buildings,
     bool canSeeAllTags,
   ) {
-
     var filteredBuildings = buildings.where((building) {
       if (widget.targetBuildingId != null) {
         return building.id == widget.targetBuildingId;
       }
       if (!canSeeAllTags && building.collectedCount == 0) return false;
-      
+
       if (_selectedFilter == 'all') return true;
       if (_selectedFilter == 'red' && building.collectedCount == 0) return true;
-      if (_selectedFilter == 'green' && building.collectedCount >= building.totalUnits) return true;
-      if (_selectedFilter == 'orange' && building.collectedCount > 0 && building.collectedCount < building.totalUnits) return true;
+      if (_selectedFilter == 'green' &&
+          building.collectedCount >= building.totalUnits)
+        return true;
+      if (_selectedFilter == 'orange' &&
+          building.collectedCount > 0 &&
+          building.collectedCount < building.totalUnits)
+        return true;
       return false;
     }).toList();
 
@@ -296,10 +340,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (building.collectedCount > 0 && building.collectedCount < building.totalUnits)
+              if (building.collectedCount > 0 &&
+                  building.collectedCount < building.totalUnits)
                 Container(
                   constraints: const BoxConstraints(maxWidth: 56),
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.bgCard,
                     borderRadius: BorderRadius.circular(6),
@@ -336,7 +384,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with TickerProviderStat
       );
     }).toList();
   }
-
 }
 
 class _BuildingsMarkerLayer extends ConsumerWidget {
@@ -360,12 +407,7 @@ class _BuildingsMarkerLayer extends ConsumerWidget {
           final state = context.findAncestorStateOfType<_HomeScreenState>();
           if (state == null) return const <Marker>[];
 
-          return state._buildMarkers(
-            context,
-            ref,
-            buildings,
-            canSeeAllTags,
-          );
+          return state._buildMarkers(context, ref, buildings, canSeeAllTags);
         },
         loading: () => const <Marker>[],
         error: (err, stack) => const <Marker>[],
@@ -395,9 +437,15 @@ class _LiveLocationMarkerLayer extends ConsumerWidget {
                       color: AppColors.accent,
                       shape: BoxShape.circle,
                       border: Border.all(color: AppColors.bgBase, width: 3),
-                      boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black54)],
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 8, color: Colors.black54),
+                      ],
                     ),
-                    child: const Icon(LucideIcons.user, color: Colors.white, size: 18),
+                    child: const Icon(
+                      LucideIcons.user,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
                 ),
               ],

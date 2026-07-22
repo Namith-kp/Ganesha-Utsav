@@ -28,7 +28,8 @@ class ReportsScreen extends ConsumerStatefulWidget {
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
 }
 
-class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTickerProviderStateMixin {
+class _ReportsScreenState extends ConsumerState<ReportsScreen>
+    with SingleTickerProviderStateMixin {
   bool _isExporting = false;
   Future<List<Map<String, dynamic>>>? _collectionsFuture;
   Future<List<Map<String, dynamic>>>? _allCollectionsFuture;
@@ -57,20 +58,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     // Tab controller initialization will be handled in didChangeDependencies
     _loadData();
     _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
+      setState(
+        () => _searchQuery = _searchController.text.trim().toLowerCase(),
+      );
     });
   }
-  
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final profile = ref.read(collectorProfileProvider).value;
     final canSeeTeamData = profile?.canSeeTeamData ?? false;
     final isViewer = profile?.role == 'viewer';
-    final hasExtraTabs = canSeeTeamData || isViewer;
     
     int length = 1; // Collections
-    if (hasExtraTabs) length += 2; // Team Funds, Spendings
+    if (canSeeTeamData && !isViewer) length += 1; // Team Funds
+    if (canSeeTeamData || isViewer) length += 1; // Spendings
 
     if (_tabController?.length != length) {
       _tabController?.dispose();
@@ -80,7 +83,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       });
     }
   }
-  
+
   @override
   void dispose() {
     _tabController?.dispose();
@@ -92,29 +95,36 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
   void _loadData() {
     final profile = ref.read(collectorProfileProvider).value;
-    final filterId = (profile != null && profile.isCollector && !profile.isCoreTeamMember) 
-      ? profile.id 
-      : null;
-    
-    _collectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: filterId);
-    _allCollectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
+    final filterId =
+        (profile != null && profile.isCollector && !profile.isCoreTeamMember)
+        ? profile.id
+        : null;
+
+    _collectionsFuture = ref
+        .read(buildingServiceProvider)
+        .getDetailedCollections(filterCollectorId: filterId);
+    _allCollectionsFuture = ref
+        .read(buildingServiceProvider)
+        .getDetailedCollections(filterCollectorId: null);
     _collectorsFuture = AuthService().getAllCollectors().then((data) {
       if (mounted) setState(() => _cachedCollectors = data);
       return data;
     });
-    _combinedCollectionsFuture = Future.wait([_collectionsFuture!, _collectorsFuture!]).then((data) {
-      if (mounted) setState(() => _cachedCombinedCollections = data);
-      return data;
-    });
+    _combinedCollectionsFuture =
+        Future.wait([_collectionsFuture!, _collectorsFuture!]).then((data) {
+          if (mounted) setState(() => _cachedCombinedCollections = data);
+          return data;
+        });
     _spendingsFuture = ref.read(spendingServiceProvider).getSpendings();
-    _combinedSpendingsFuture = Future.wait([
-      _spendingsFuture!,
-      _allCollectionsFuture!,
-      _collectorsFuture!
-    ]).then((data) {
-      if (mounted) setState(() => _cachedCombinedSpendings = data);
-      return data;
-    });
+    _combinedSpendingsFuture =
+        Future.wait([
+          _spendingsFuture!,
+          _allCollectionsFuture!,
+          _collectorsFuture!,
+        ]).then((data) {
+          if (mounted) setState(() => _cachedCombinedSpendings = data);
+          return data;
+        });
   }
 
   Future<void> _confirmDeleteSpending(Spending spending) async {
@@ -122,16 +132,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: Text('Delete Spending', style: GoogleFonts.plusJakartaSans(color: Colors.white)),
-        content: Text('Are you sure you want to delete this spending of ₹${spending.amount.toStringAsFixed(0)}?', style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
+        title: Text(
+          'Delete Spending',
+          style: GoogleFonts.plusJakartaSans(color: Colors.white),
+        ),
+        content: Text(
+          'Are you sure you want to delete this spending of ₹${spending.amount.toStringAsFixed(0)}?',
+          style: GoogleFonts.plusJakartaSans(color: Colors.white70),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(color: Colors.white54),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: GoogleFonts.plusJakartaSans(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -144,11 +169,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           _loadData();
         });
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Spending deleted successfully.')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Spending deleted successfully.')),
+          );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
         }
       }
     }
@@ -158,19 +187,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     setState(() => _isExporting = true);
     try {
       final buildingService = ref.read(buildingServiceProvider);
-      
-      final profile = ref.read(collectorProfileProvider).value;
-      final filterId = (profile != null && profile.isCollector && !profile.isCoreTeamMember) 
-        ? profile.id 
-        : null;
 
-      final data = await buildingService.getFlattenedCollectionData(filterCollectorId: filterId);
+      final profile = ref.read(collectorProfileProvider).value;
+      final filterId =
+          (profile != null && profile.isCollector && !profile.isCoreTeamMember)
+          ? profile.id
+          : null;
+
+      final data = await buildingService.getFlattenedCollectionData(
+        filterCollectorId: filterId,
+      );
 
       if (data.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No data to export.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('No data to export.')));
         }
         setState(() => _isExporting = false);
         return;
@@ -178,35 +210,38 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
       // Extract headers
       final headers = data.first.keys.toList();
-      
+
       // Extract rows
-      final rows = data.map((map) => headers.map((h) => map[h]).toList()).toList();
-      
+      final rows = data
+          .map((map) => headers.map((h) => map[h]).toList())
+          .toList();
+
       // Combine
       final csvData = [headers, ...rows];
-      
+
       // Convert to CSV string
       String csv = const CsvEncoder().convert(csvData);
-      
+
       // Get temporary directory
       final dir = await getTemporaryDirectory();
       final path = '${dir.path}/collections_report.csv';
-      
+
       // Write to file
       final file = File(path);
       await file.writeAsString(csv);
-      
-      // Share file
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(path)], 
-        text: 'Ganesha Funds Collection Report',
-      ));
 
+      // Share file
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path)],
+          text: 'Ganesha Funds Collection Report',
+        ),
+      );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error exporting CSV: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error exporting CSV: $e')));
       }
     } finally {
       if (mounted) {
@@ -227,8 +262,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           controller: _tabController,
           tabs: [
             const Tab(text: 'Collections'),
-            if (profile?.canSeeTeamData == true || profile?.role == 'viewer') const Tab(text: 'Team Funds'),
-            if (profile?.canSeeTeamData == true || profile?.role == 'viewer') const Tab(text: 'Spendings'),
+            if (profile?.canSeeTeamData == true && profile?.role != 'viewer')
+              const Tab(text: 'Team Funds'),
+            if (profile?.canSeeTeamData == true || profile?.role == 'viewer')
+              const Tab(text: 'Spendings'),
           ],
         ),
         actions: [
@@ -241,8 +278,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
             },
           ),
           IconButton(
-            icon: _isExporting 
-                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
                 : const Icon(Icons.download),
             tooltip: 'Export CSV',
             onPressed: _isExporting ? null : _exportToCsv,
@@ -252,9 +296,20 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildCollectionsTab(isAdmin, _collectionsScrollController, profile?.role == 'viewer'),
-          if (profile?.canSeeTeamData == true || profile?.role == 'viewer') _buildTeamFundsTab(isAdmin, profile?.id, profile?.role == 'viewer'),
-          if (profile?.canSeeTeamData == true || profile?.role == 'viewer') _buildSpendingsTab(isAdmin, profile?.id, profile?.name, profile?.role == 'viewer'),
+          _buildCollectionsTab(
+            isAdmin,
+            _collectionsScrollController,
+            profile?.role == 'viewer',
+          ),
+          if (profile?.canSeeTeamData == true && profile?.role != 'viewer')
+            _buildTeamFundsTab(isAdmin, profile?.id, profile?.role == 'viewer'),
+          if (profile?.canSeeTeamData == true || profile?.role == 'viewer')
+            _buildSpendingsTab(
+              isAdmin,
+              profile?.id,
+              profile?.name,
+              profile?.role == 'viewer',
+            ),
         ],
       ),
       floatingActionButton: _buildFloatingActionButton(isAdmin, profile),
@@ -265,7 +320,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     if (profile == null) return null;
     final int index = _tabController?.index ?? 0;
     final bool canSeeTeamData = profile.canSeeTeamData ?? false;
-    
+
     if (canSeeTeamData && index == 1 && isAdmin) {
       // Team Funds Tab (Index 1 when canSeeTeamData is true)
       return FloatingActionButton.extended(
@@ -305,21 +360,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
       builder: (context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1E1E1E),
-          title: Text('Add Team Member', style: GoogleFonts.plusJakartaSans(color: Colors.white)),
+          title: Text(
+            'Add Team Member',
+            style: GoogleFonts.plusJakartaSans(color: Colors.white),
+          ),
           content: TextField(
             controller: nameController,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               labelText: 'Name',
               labelStyle: const TextStyle(color: Colors.white54),
-              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
-              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.5))),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.2),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.plusJakartaSans(color: Colors.white54),
+              ),
             ),
             TextButton(
               onPressed: () {
@@ -327,7 +396,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                   Navigator.pop(context, true);
                 }
               },
-              child: Text('Add', style: GoogleFonts.plusJakartaSans(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+              child: Text(
+                'Add',
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.greenAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         );
@@ -339,32 +414,48 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
         await AuthService().addManualTeamMember(nameController.text.trim());
         setState(() => _loadData());
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Member added successfully')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Member added successfully')),
+          );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to add member: $e')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to add member: $e')));
         }
       }
     }
   }
 
-  Widget _buildTeamFundsTab(bool isAdmin, String? currentUserId, [bool isViewer = false]) {
+  Widget _buildTeamFundsTab(
+    bool isAdmin,
+    String? currentUserId, [
+    bool isViewer = false,
+  ]) {
     return FutureBuilder<List<Collector>>(
       future: _collectorsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && _cachedCollectors == null) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _cachedCollectors == null) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError && _cachedCollectors == null) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
-        
+
         final collectors = snapshot.data ?? _cachedCollectors ?? [];
-        final teamMembers = collectors.where((c) => c.role == 'team_member' || c.isCoreTeamMember).toList();
-        
+        final teamMembers = collectors
+            .where((c) => c.role == 'team_member' || c.isCoreTeamMember)
+            .toList();
+
         if (teamMembers.isEmpty) {
-          return const Center(child: Text('No team members found.', style: TextStyle(color: Colors.white54)));
+          return const Center(
+            child: Text(
+              'No team members found.',
+              style: TextStyle(color: Colors.white54),
+            ),
+          );
         }
 
         double totalFunds = 0;
@@ -388,7 +479,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                   ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
-                    BoxShadow(color: const Color(0xFF5E5CE6).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6)),
+                    BoxShadow(
+                      color: const Color(0xFF5E5CE6).withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
                   ],
                 ),
                 child: Row(
@@ -397,9 +492,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Total Team Funds', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+                        Text(
+                          'Total Team Funds',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
                         const SizedBox(height: 4),
-                        Text('₹${totalFunds.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                        Text(
+                          '₹${totalFunds.toStringAsFixed(0)}',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                     Container(
@@ -408,39 +516,74 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         color: Colors.white.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(LucideIcons.users, color: Colors.white, size: 28),
+                      child: const Icon(
+                        LucideIcons.users,
+                        color: Colors.white,
+                        size: 28,
+                      ),
                     ),
                   ],
                 ),
               ),
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 itemCount: teamMembers.length,
                 itemBuilder: (context, index) {
                   final member = teamMembers[index];
                   final isPaid = member.fundStatus == 'paid';
                   final amount = member.fundAmount ?? 0.0;
-                  
+
                   return Card(
                     color: const Color(0xFF1E1E1E),
                     margin: const EdgeInsets.only(bottom: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        width: 1,
+                      ),
                     ),
                     child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      title: Text(member.name, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                        isPaid ? 'Paid ₹${amount.toStringAsFixed(0)} via ${member.fundPaymentMethod}' : 'Pending',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      title: Text(
+                        member.name,
                         style: GoogleFonts.plusJakartaSans(
-                          color: isPaid ? Colors.green[400] : Colors.orange[400],
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        isPaid
+                            ? 'Paid ₹${amount.toStringAsFixed(0)} via ${member.fundPaymentMethod}'
+                            : 'Pending',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: isPaid
+                              ? Colors.green[400]
+                              : Colors.orange[400],
                           fontSize: 13,
                         ),
                       ),
-                      trailing: isAdmin ? Icon(LucideIcons.edit2, color: Colors.white.withValues(alpha: 0.5), size: 18) : null,
-                      onTap: isAdmin ? () => _showTeamFundBottomSheet(context, member, currentUserId) : null,
+                      trailing: isAdmin
+                          ? Icon(
+                              LucideIcons.edit2,
+                              color: Colors.white.withValues(alpha: 0.5),
+                              size: 18,
+                            )
+                          : null,
+                      onTap: isAdmin
+                          ? () => _showTeamFundBottomSheet(
+                              context,
+                              member,
+                              currentUserId,
+                            )
+                          : null,
                     ),
                   );
                 },
@@ -452,11 +595,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     );
   }
 
-  Widget _buildSpendingsTab(bool isAdmin, String? currentUserId, String? currentUserName, [bool isViewer = false]) {
+  Widget _buildSpendingsTab(
+    bool isAdmin,
+    String? currentUserId,
+    String? currentUserName, [
+    bool isViewer = false,
+  ]) {
     return FutureBuilder(
       future: _combinedSpendingsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && _cachedCombinedSpendings == null) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _cachedCombinedSpendings == null) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError && _cachedCombinedSpendings == null) {
@@ -465,12 +614,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
 
         final combinedData = snapshot.data ?? _cachedCombinedSpendings;
         final spendings = (combinedData?[0] as List<Spending>?) ?? [];
-        final allCollections = (combinedData?[1] as List<Map<String, dynamic>>?) ?? [];
+        final allCollections =
+            (combinedData?[1] as List<Map<String, dynamic>>?) ?? [];
         final allCollectors = (combinedData?[2] as List<Collector>?) ?? [];
 
         double totalCollections = 0;
         for (var data in allCollections) {
-          if (data['isTeamFund'] == true || data['isCorrection'] == true) continue;
+          if (data['isTeamFund'] == true || data['isCorrection'] == true)
+            continue;
           final Unit unit = data['unit'];
           totalCollections += unit.amount;
         }
@@ -486,25 +637,41 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
         Map<String, double> spendingsByReason = {};
         for (var spending in spendings) {
           totalSpendings += spending.amount;
-          spendingsByReason[spending.reason] = (spendingsByReason[spending.reason] ?? 0) + spending.amount;
+          spendingsByReason[spending.reason] =
+              (spendingsByReason[spending.reason] ?? 0) + spending.amount;
         }
 
-        double remainingFunds = (totalCollections + totalTeamFunds) - totalSpendings;
+        double remainingFunds =
+            (totalCollections + totalTeamFunds) - totalSpendings;
 
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (!isViewer) ...[
-              Row(
+            Row(
                 children: [
-                  Expanded(child: _buildMetricCard('Total Spendings', '₹${totalSpendings.toStringAsFixed(0)}', LucideIcons.trendingDown, Colors.redAccent)),
+                  Expanded(
+                    child: _buildMetricCard(
+                      'Total Spendings',
+                      '₹${totalSpendings.toStringAsFixed(0)}',
+                      LucideIcons.trendingDown,
+                      Colors.redAccent,
+                    ),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _buildMetricCard('Remaining', '₹${remainingFunds.toStringAsFixed(0)}', LucideIcons.wallet, remainingFunds >= 0 ? Colors.greenAccent : Colors.redAccent)),
+                  Expanded(
+                    child: _buildMetricCard(
+                      'Remaining',
+                      '₹${remainingFunds.toStringAsFixed(0)}',
+                      LucideIcons.wallet,
+                      remainingFunds >= 0
+                          ? Colors.greenAccent
+                          : Colors.redAccent,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
-            ],
-            if (!isViewer && spendings.isNotEmpty && spendingsByReason.isNotEmpty)
+            if (spendings.isNotEmpty && spendingsByReason.isNotEmpty)
               Container(
                 height: 200,
                 padding: const EdgeInsets.all(16),
@@ -512,7 +679,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1E1E),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -523,7 +692,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                           sectionsSpace: 2,
                           centerSpaceRadius: 40,
                           sections: spendingsByReason.entries.map((entry) {
-                            final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
+                            final color =
+                                Colors.primaries[spendingsByReason.keys
+                                        .toList()
+                                        .indexOf(entry.key) %
+                                    Colors.primaries.length];
                             return PieChartSectionData(
                               color: color,
                               value: entry.value,
@@ -538,21 +711,43 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                       flex: 1,
                       child: ListView(
                         children: spendingsByReason.entries.map((entry) {
-                          final color = Colors.primaries[spendingsByReason.keys.toList().indexOf(entry.key) % Colors.primaries.length];
+                          final color =
+                              Colors.primaries[spendingsByReason.keys
+                                      .toList()
+                                      .indexOf(entry.key) %
+                                  Colors.primaries.length];
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             child: Row(
                               children: [
-                                Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    entry.key, 
-                                    style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    entry.key,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                Text('₹${entry.value.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                Text(
+                                  '₹${entry.value.toStringAsFixed(0)}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ],
                             ),
                           );
@@ -563,21 +758,34 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 ),
               ),
             if (spendings.isEmpty)
-              Center(child: Text('No spendings recorded yet.', style: GoogleFonts.plusJakartaSans(color: Colors.white54)))
+              Center(
+                child: Text(
+                  'No spendings recorded yet.',
+                  style: GoogleFonts.plusJakartaSans(color: Colors.white54),
+                ),
+              )
             else
-              ...spendings.map((spending) => _SpendingCard(
-                spending: spending,
-                isAdmin: isAdmin,
-                onEdit: () async {
-                  final didUpdate = await showEditSpendingBottomSheet(context, ref.read(spendingServiceProvider), spending);
-                  if (didUpdate == true) {
-                    setState(() {
-                      _loadData();
-                    });
-                  }
-                },
-                onDelete: () => _confirmDeleteSpending(spending),
-              )).toList(),
+              ...spendings
+                  .map(
+                    (spending) => _SpendingCard(
+                      spending: spending,
+                      isAdmin: isAdmin,
+                      onEdit: () async {
+                        final didUpdate = await showEditSpendingBottomSheet(
+                          context,
+                          ref.read(spendingServiceProvider),
+                          spending,
+                        );
+                        if (didUpdate == true) {
+                          setState(() {
+                            _loadData();
+                          });
+                        }
+                      },
+                      onDelete: () => _confirmDeleteSpending(spending),
+                    ),
+                  )
+                  .toList(),
             const SizedBox(height: 80), // Space for FAB
           ],
         );
@@ -585,7 +793,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
+  Widget _buildMetricCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -600,70 +813,115 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
             children: [
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 8),
-              Text(title, style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 13)),
+              Text(
+                title,
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white70,
+                  fontSize: 13,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
-          Text(value, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  void _showTeamFundBottomSheet(BuildContext context, Collector member, String? currentUserId) {
+  void _showTeamFundBottomSheet(
+    BuildContext context,
+    Collector member,
+    String? currentUserId,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      constraints: const BoxConstraints(maxWidth: 800),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-          child: _TeamFundForm(member: member, currentUserId: currentUserId, onSave: _loadData),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: _TeamFundForm(
+            member: member,
+            currentUserId: currentUserId,
+            onSave: _loadData,
+          ),
         );
       },
     );
   }
 
-  Widget _buildCollectionsTab(bool isAdmin, ScrollController scrollController, [bool isViewer = false]) {
+  Widget _buildCollectionsTab(
+    bool isAdmin,
+    ScrollController scrollController, [
+    bool isViewer = false,
+  ]) {
     return FutureBuilder(
       future: _combinedCollectionsFuture,
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && _cachedCombinedCollections == null) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _cachedCombinedCollections == null) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError && _cachedCombinedCollections == null) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
-        
+
         final combinedData = snapshot.data ?? _cachedCombinedCollections;
-        final collections = (combinedData?[0] as List<Map<String, dynamic>>?) ?? [];
+        final collections =
+            (combinedData?[0] as List<Map<String, dynamic>>?) ?? [];
         final collectors = (combinedData?[1] as List<Collector>?) ?? [];
-        
+
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
         final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-        
+
         final Map<DateTime, double> dailyTotalsMap = {};
         for (var item in collections) {
           final Unit unit = item['unit'];
           if (unit.collectedAt != null) {
-            final d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
+            final d = DateTime(
+              unit.collectedAt!.year,
+              unit.collectedAt!.month,
+              unit.collectedAt!.day,
+            );
             dailyTotalsMap[d] = (dailyTotalsMap[d] ?? 0) + unit.amount;
           }
         }
 
-        List<Map<String, dynamic>> baseFilteredCollections = collections.where((item) {
-           final Unit unit = item['unit'];
-           if (_filterType == 'All Time') return true;
-           if (unit.collectedAt == null) return false;
-           
-           DateTime d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
-           if (_filterType == 'Today' && d == todayStart) return true;
-           if (_filterType == 'Yesterday' && d == yesterdayStart) return true;
-           if (_filterType == 'Custom Date' && _customDate != null && d == _customDate) return true;
-           
-           return false;
+        List<Map<String, dynamic>> baseFilteredCollections = collections.where((
+          item,
+        ) {
+          final Unit unit = item['unit'];
+          if (_filterType == 'All Time') return true;
+          if (unit.collectedAt == null) return false;
+
+          DateTime d = DateTime(
+            unit.collectedAt!.year,
+            unit.collectedAt!.month,
+            unit.collectedAt!.day,
+          );
+          if (_filterType == 'Today' && d == todayStart) return true;
+          if (_filterType == 'Yesterday' && d == yesterdayStart) return true;
+          if (_filterType == 'Custom Date' &&
+              _customDate != null &&
+              d == _customDate)
+            return true;
+
+          return false;
         }).toList();
 
         double totalCollected = 0.0;
@@ -683,14 +941,20 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
             }
           }
           if (unit.collectedAt != null) {
-            final d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
+            final d = DateTime(
+              unit.collectedAt!.year,
+              unit.collectedAt!.month,
+              unit.collectedAt!.day,
+            );
             if (d == todayStart) {
-                todayCollected += unit.amount;
+              todayCollected += unit.amount;
             }
           }
         }
 
-        List<Map<String, dynamic>> displayCollections = List.from(baseFilteredCollections);
+        List<Map<String, dynamic>> displayCollections = List.from(
+          baseFilteredCollections,
+        );
 
         // Apply search filter
         if (_searchQuery.isNotEmpty) {
@@ -699,7 +963,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
             final Building building = item['building'];
             final buildingName = building.name.toLowerCase();
             final unitLabel = unit.unitLabel.toLowerCase();
-            return buildingName.contains(_searchQuery) || unitLabel.contains(_searchQuery);
+            return buildingName.contains(_searchQuery) ||
+                unitLabel.contains(_searchQuery);
           }).toList();
         }
 
@@ -717,23 +982,29 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
         for (var item in displayCollections) {
           final Unit unit = item['unit'];
           final bool isCorrection = item['isCorrection'] == true;
-          
+
           if (unit.collectedAt != null) {
-            final d = DateTime(unit.collectedAt!.year, unit.collectedAt!.month, unit.collectedAt!.day);
+            final d = DateTime(
+              unit.collectedAt!.year,
+              unit.collectedAt!.month,
+              unit.collectedAt!.day,
+            );
             collectionsByDate.putIfAbsent(d, () => []).add(item);
             dateSummaries.putIfAbsent(d, () => {'UPI': 0.0, 'Cash': 0.0});
             if (!isCorrection) {
               if (unit.paymentMethod == 'UPI') {
-                  dateSummaries[d]!['UPI'] = dateSummaries[d]!['UPI']! + unit.amount;
+                dateSummaries[d]!['UPI'] =
+                    dateSummaries[d]!['UPI']! + unit.amount;
               } else {
-                  dateSummaries[d]!['Cash'] = dateSummaries[d]!['Cash']! + unit.amount;
+                dateSummaries[d]!['Cash'] =
+                    dateSummaries[d]!['Cash']! + unit.amount;
               }
             }
           }
         }
 
-        
-        final sortedDates = collectionsByDate.keys.toList()..sort((a, b) => b.compareTo(a));
+        final sortedDates = collectionsByDate.keys.toList()
+          ..sort((a, b) => b.compareTo(a));
 
         return CustomScrollView(
           controller: scrollController,
@@ -744,66 +1015,178 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (!isViewer) ...[
-                      Row(
-                        children: [
-                          if (_filterType == 'All Time')
-                            Expanded(child: _buildMetricCard('Today', '₹${todayCollected.toStringAsFixed(0)}', LucideIcons.calendar, AppColors.accent)),
-                          if (_filterType != 'All Time')
-                            Expanded(child: _buildMetricCard('Total', '₹${totalCollected.toStringAsFixed(0)}', LucideIcons.trendingUp, AppColors.green)),
-                          const SizedBox(width: 12),
-                          if (_filterType == 'All Time')
-                            Expanded(child: _buildMetricCard('Total', '₹${totalCollected.toStringAsFixed(0)}', LucideIcons.trendingUp, AppColors.green))
-                          else
-                            Expanded(child: _buildMetricCard('Transactions', baseFilteredCollections.length.toString(), LucideIcons.receipt, AppColors.accent)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: _buildMetricCard('Total UPI', '₹${totalUpi.toStringAsFixed(0)}', LucideIcons.smartphone, AppColors.purple)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _buildMetricCard('Total Cash', '₹${totalCash.toStringAsFixed(0)}', LucideIcons.banknote, AppColors.amber)),
-                        ],
+                    // Remove !isViewer wrapper to selectively show metrics for viewers
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isDesktop = constraints.maxWidth > 600;
+
+                          // Metric widgets
+                          final metric1 = _filterType == 'All Time'
+                              ? _buildMetricCard(
+                                  'Today',
+                                  '₹${todayCollected.toStringAsFixed(0)}',
+                                  LucideIcons.calendar,
+                                  AppColors.accent,
+                                )
+                              : _buildMetricCard(
+                                  'Total',
+                                  '₹${totalCollected.toStringAsFixed(0)}',
+                                  LucideIcons.trendingUp,
+                                  AppColors.green,
+                                );
+
+                          final metric2 = _filterType == 'All Time'
+                              ? _buildMetricCard(
+                                  'Total',
+                                  '₹${totalCollected.toStringAsFixed(0)}',
+                                  LucideIcons.trendingUp,
+                                  AppColors.green,
+                                )
+                              : _buildMetricCard(
+                                  'Transactions',
+                                  baseFilteredCollections.length.toString(),
+                                  LucideIcons.receipt,
+                                  AppColors.accent,
+                                );
+
+                          final metric3 = _buildMetricCard(
+                            'Total UPI',
+                            '₹${totalUpi.toStringAsFixed(0)}',
+                            LucideIcons.smartphone,
+                            AppColors.purple,
+                          );
+                          final metric4 = _buildMetricCard(
+                            'Total Cash',
+                            '₹${totalCash.toStringAsFixed(0)}',
+                            LucideIcons.banknote,
+                            AppColors.amber,
+                          );
+
+                          return Column(
+                            children: [
+                              if (isDesktop)
+                                Row(
+                                  children: [
+                                    Expanded(child: metric1),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: metric2),
+                                    if (!isViewer) ...[
+                                      const SizedBox(width: 12),
+                                      Expanded(child: metric3),
+                                      const SizedBox(width: 12),
+                                      Expanded(child: metric4),
+                                    ],
+                                  ],
+                                )
+                              else
+                                Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(child: metric1),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: metric2),
+                                      ],
+                                    ),
+                                    if (!isViewer) ...[
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(child: metric3),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: metric4),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              if (!isViewer) ...[
+                                const SizedBox(height: 24),
+                                Container(
+                                  height: isDesktop ? 300 : 200,
+                                  padding: const EdgeInsets.all(16),
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E1E1E),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.1),
+                                    ),
+                                  ),
+                                  child: _buildChart(dailyTotalsMap),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
                       ),
                       const SizedBox(height: 24),
-                      Container(
-                        height: 200,
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E1E1E),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                        ),
-                        child: _buildChart(dailyTotalsMap),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 12,
+                      runSpacing: 12,
                       children: [
-                        Text('Collections', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                        Row(
+                        Text(
+                          'Collections',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
                             if (isAdmin)
                               Container(
                                 margin: const EdgeInsets.only(right: 8),
                                 decoration: BoxDecoration(
-                                  color: _showCollectorsView ? const Color(0xFF5E5CE6).withValues(alpha: 0.2) : Colors.transparent,
+                                  color: _showCollectorsView
+                                      ? const Color(
+                                          0xFF5E5CE6,
+                                        ).withValues(alpha: 0.2)
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white24),
+                                  border: Border.all(
+                                    color: _showCollectorsView
+                                        ? const Color(0xFF5E5CE6)
+                                        : Colors.white24,
+                                  ),
                                 ),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(20),
-                                  onTap: () => setState(() => _showCollectorsView = !_showCollectorsView),
+                                  onTap: () => setState(
+                                    () => _showCollectorsView =
+                                        !_showCollectorsView,
+                                  ),
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
                                     child: Row(
                                       children: [
-                                        Icon(LucideIcons.users, size: 14, color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70),
+                                        Icon(
+                                          LucideIcons.users,
+                                          size: 14,
+                                          color: _showCollectorsView
+                                              ? const Color(0xFF5E5CE6)
+                                              : Colors.white70,
+                                        ),
                                         const SizedBox(width: 6),
-                                        Text('By Collector', style: GoogleFonts.plusJakartaSans(color: _showCollectorsView ? const Color(0xFF5E5CE6) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+                                        Text(
+                                          'By Collector',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: _showCollectorsView
+                                                ? const Color(0xFF5E5CE6)
+                                                : Colors.white70,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -811,55 +1194,84 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                               ),
                             if (!_showCollectorsView)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.blue.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                                  border: Border.all(
+                                    color: Colors.blue.withValues(alpha: 0.3),
+                                  ),
                                 ),
                                 child: DropdownButton<String>(
                                   value: _filterType,
                                   dropdownColor: const Color(0xFF1E1E1E),
-                                  icon: Icon(LucideIcons.filter, size: 16, color: Colors.blue.shade400),
-                                  style: GoogleFonts.plusJakartaSans(color: Colors.blue.shade300, fontWeight: FontWeight.bold, fontSize: 14),
+                                  icon: Icon(
+                                    LucideIcons.filter,
+                                    size: 16,
+                                    color: Colors.blue.shade400,
+                                  ),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: Colors.blue.shade300,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
                                   underline: const SizedBox(),
-                                  items: ['All Time', 'Today', 'Yesterday', 'Custom Date'].map((String value) {
-                                    return DropdownMenuItem<String>(
-                                      value: value,
-                                      child: Text(value, style: GoogleFonts.plusJakartaSans()),
-                                    );
-                                  }).toList(),
+                                  items:
+                                      [
+                                        'All Time',
+                                        'Today',
+                                        'Yesterday',
+                                        'Custom Date',
+                                      ].map((String value) {
+                                        return DropdownMenuItem<String>(
+                                          value: value,
+                                          child: Text(
+                                            value,
+                                            style:
+                                                GoogleFonts.plusJakartaSans(),
+                                          ),
+                                        );
+                                      }).toList(),
                                   onChanged: (String? newValue) async {
                                     if (newValue == 'Custom Date') {
-                                       final picked = await showDatePicker(
-                                         context: context,
-                                         initialDate: _customDate ?? DateTime.now(),
-                                         firstDate: DateTime(2020),
-                                         lastDate: DateTime.now(),
-                                         builder: (context, child) {
-                                           return Theme(
-                                             data: ThemeData.dark().copyWith(
-                                               colorScheme: const ColorScheme.dark(
-                                                 primary: Color(0xFF5E5CE6),
-                                                 onPrimary: Colors.white,
-                                                 surface: Color(0xFF1E1E1E),
-                                                 onSurface: Colors.white,
-                                               ),
-                                             ),
-                                             child: child!,
-                                           );
-                                         },
-                                       );
-                                       if (picked != null) {
-                                          setState(() {
-                                            _filterType = newValue!;
-                                            _customDate = DateTime(picked.year, picked.month, picked.day);
-                                          });
-                                       }
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate:
+                                            _customDate ?? DateTime.now(),
+                                        firstDate: DateTime(2020),
+                                        lastDate: DateTime.now(),
+                                        builder: (context, child) {
+                                          return Theme(
+                                            data: ThemeData.dark().copyWith(
+                                              colorScheme:
+                                                  const ColorScheme.dark(
+                                                    primary: Color(0xFF5E5CE6),
+                                                    onPrimary: Colors.white,
+                                                    surface: Color(0xFF1E1E1E),
+                                                    onSurface: Colors.white,
+                                                  ),
+                                            ),
+                                            child: child!,
+                                          );
+                                        },
+                                      );
+                                      if (picked != null) {
+                                        setState(() {
+                                          _filterType = newValue!;
+                                          _customDate = DateTime(
+                                            picked.year,
+                                            picked.month,
+                                            picked.day,
+                                          );
+                                        });
+                                      }
                                     } else if (newValue != null) {
-                                       setState(() {
-                                         _filterType = newValue!;
-                                       });
+                                      setState(() {
+                                        _filterType = newValue!;
+                                      });
                                     }
                                   },
                                 ),
@@ -868,34 +1280,60 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         ),
                       ],
                     ),
-                    if (!_showCollectorsView && _filterType == 'Custom Date' && _customDate != null)
+                    if (!_showCollectorsView &&
+                        _filterType == 'Custom Date' &&
+                        _customDate != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
-                        child: Text('Showing data for ${_customDate!.day}/${_customDate!.month}/${_customDate!.year}', style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontWeight: FontWeight.w500)),
+                        child: Text(
+                          'Showing data for ${_customDate!.day}/${_customDate!.month}/${_customDate!.year}',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
                     // Search bar placed right below the Collections header
-                    if (!_showCollectorsView) ...[  
+                    if (!_showCollectorsView) ...[
                       const SizedBox(height: 12),
                       Container(
                         decoration: BoxDecoration(
                           color: const Color(0xFF2A2A2A),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
                         ),
                         child: TextField(
                           controller: _searchController,
                           focusNode: _searchFocusNode,
-                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 14),
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
                           onChanged: (value) {
-                            setState(() => _searchQuery = value.trim().toLowerCase());
+                            setState(
+                              () => _searchQuery = value.trim().toLowerCase(),
+                            );
                           },
                           decoration: InputDecoration(
                             hintText: 'Search building or unit name...',
-                            hintStyle: GoogleFonts.plusJakartaSans(color: Colors.white38, fontSize: 14),
-                            prefixIcon: const Icon(LucideIcons.search, color: Colors.white38, size: 18),
+                            hintStyle: GoogleFonts.plusJakartaSans(
+                              color: Colors.white38,
+                              fontSize: 14,
+                            ),
+                            prefixIcon: const Icon(
+                              LucideIcons.search,
+                              color: Colors.white38,
+                              size: 18,
+                            ),
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
-                                    icon: const Icon(LucideIcons.x, color: Colors.white38, size: 18),
+                                    icon: const Icon(
+                                      LucideIcons.x,
+                                      color: Colors.white38,
+                                      size: 18,
+                                    ),
                                     onPressed: () {
                                       _searchController.clear();
                                       setState(() => _searchQuery = '');
@@ -903,7 +1341,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                   )
                                 : null,
                             border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 16,
+                            ),
                           ),
                         ),
                       ),
@@ -921,36 +1362,56 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _showOnlyDonations = false),
+                              onTap: () =>
+                                  setState(() => _showOnlyDonations = false),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: !_showOnlyDonations ? AppColors.accent : Colors.transparent,
+                                  color: !_showOnlyDonations
+                                      ? AppColors.accent
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Center(
-                                  child: Text('All Funds', style: GoogleFonts.plusJakartaSans(
-                                    color: !_showOnlyDonations ? Colors.white : Colors.white54,
-                                    fontWeight: FontWeight.bold,
-                                  )),
+                                  child: Text(
+                                    'All Funds',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: !_showOnlyDonations
+                                          ? Colors.white
+                                          : Colors.white54,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _showOnlyDonations = true),
+                              onTap: () =>
+                                  setState(() => _showOnlyDonations = true),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: _showOnlyDonations ? AppColors.accent : Colors.transparent,
+                                  color: _showOnlyDonations
+                                      ? AppColors.accent
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Center(
-                                  child: Text('Sponsorships', style: GoogleFonts.plusJakartaSans(
-                                    color: _showOnlyDonations ? Colors.white : Colors.white54,
-                                    fontWeight: FontWeight.bold,
-                                  )),
+                                  child: Text(
+                                    'Sponsorships',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: _showOnlyDonations
+                                          ? Colors.white
+                                          : Colors.white54,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -967,20 +1428,30 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Center(child: Text('No collections found.', style: GoogleFonts.plusJakartaSans(color: Colors.white54))),
+                  child: Center(
+                    child: Text(
+                      'No collections found.',
+                      style: GoogleFonts.plusJakartaSans(color: Colors.white54),
+                    ),
+                  ),
                 ),
               ),
             if (!_showCollectorsView)
               ...sortedDates.map((date) {
                 final items = collectionsByDate[date]!;
                 final summary = dateSummaries[date]!;
-                final dateStr = (date == todayStart) ? 'Today' : (date == todayStart.subtract(const Duration(days: 1)) ? 'Yesterday' : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}');
-                
+                final dateStr = (date == todayStart)
+                    ? 'Today'
+                    : (date == todayStart.subtract(const Duration(days: 1))
+                          ? 'Yesterday'
+                          : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}');
+
                 // Sort items in this date by collectedAt descending
                 items.sort((a, b) {
                   final Unit uA = a['unit'];
                   final Unit uB = b['unit'];
-                  if (uA.collectedAt == null || uB.collectedAt == null) return 0;
+                  if (uA.collectedAt == null || uB.collectedAt == null)
+                    return 0;
                   return uB.collectedAt!.compareTo(uA.collectedAt!);
                 });
 
@@ -990,76 +1461,153 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                       if (index == 0) {
                         // Header
                         return Padding(
-                          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+                          padding: const EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            top: 16,
+                            bottom: 8,
+                          ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(dateStr, style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70)),
+                              Text(
+                                dateStr,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white70,
+                                ),
+                              ),
                               Row(
                                 children: [
                                   if (summary['UPI']! > 0)
-                                    Text('UPI: ₹${summary['UPI']!.toStringAsFixed(0)}  ', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.purple, fontWeight: FontWeight.w600)),
+                                    Text(
+                                      'UPI: ₹${summary['UPI']!.toStringAsFixed(0)}  ',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        color: AppColors.purple,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   if (summary['Cash']! > 0)
-                                    Text('Cash: ₹${summary['Cash']!.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.amber, fontWeight: FontWeight.w600)),
+                                    Text(
+                                      'Cash: ₹${summary['Cash']!.toStringAsFixed(0)}',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        color: AppColors.amber,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ],
                           ),
                         );
                       }
-                      
+
                       final itemIndex = index - 1;
                       final item = items[itemIndex];
                       final Unit unit = item['unit'];
                       final Building building = item['building'];
                       final bool isCorrection = item['isCorrection'] == true;
                       final date = unit.collectedAt;
-                      final timeStr = date != null ? '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}' : 'No time';
+                      final timeStr = date != null
+                          ? '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
+                          : 'No time';
 
                       if (isCorrection) {
                         // ── Delta / correction card — same layout as regular card ──
-                        final double delta = (item['delta'] as num?)?.toDouble() ?? unit.amount;
-                        final double oldAmt = (item['oldAmount'] as num?)?.toDouble() ?? 0.0;
-                        final double newAmt = (item['newAmount'] as num?)?.toDouble() ?? 0.0;
-                        final String editorName = item['correctedByName'] as String? ?? 'Admin';
+                        final double delta =
+                            (item['delta'] as num?)?.toDouble() ?? unit.amount;
+                        final double oldAmt =
+                            (item['oldAmount'] as num?)?.toDouble() ?? 0.0;
+                        final double newAmt =
+                            (item['newAmount'] as num?)?.toDouble() ?? 0.0;
+                        final String editorName =
+                            item['correctedByName'] as String? ?? 'Admin';
                         final bool isIncrease = delta >= 0;
-                        final Color deltaColor = isIncrease ? Colors.greenAccent : Colors.redAccent;
+                        final Color deltaColor = isIncrease
+                            ? Colors.greenAccent
+                            : Colors.redAccent;
                         final String deltaSign = isIncrease ? '+' : '';
                         // Use the real original unit & building for photo thumbnail and tap dialog
                         final Unit? realUnit = item['realUnit'] as Unit?;
-                        final Building realBuilding = (item['realBuilding'] as Building?) ?? building;
+                        final Building realBuilding =
+                            (item['realBuilding'] as Building?) ?? building;
 
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
                           child: Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             color: const Color(0xFF1E1E1E),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                              side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.1),
+                              ),
                             ),
                             child: ListTile(
                               leading: (realUnit?.photoBase64 != null)
-                                  ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(base64Decode(realUnit!.photoBase64!), width: 50, height: 50, fit: BoxFit.cover))
-                                  : const Icon(LucideIcons.imageOff, size: 50, color: Colors.white24),
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        base64Decode(realUnit!.photoBase64!),
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      LucideIcons.imageOff,
+                                      size: 50,
+                                      color: Colors.white24,
+                                    ),
                               title: Row(
                                 children: [
                                   Expanded(
-                                    child: Text('${building.name} - ${unit.unitLabel}',
-                                        style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                                    child: Text(
+                                      '${building.name} - ${unit.unitLabel}',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: Colors.amber.withValues(alpha: 0.15),
+                                      color: Colors.amber.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                                      border: Border.all(
+                                        color: Colors.amber.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                      ),
                                     ),
                                     child: Row(
                                       children: [
-                                        const Icon(LucideIcons.edit2, size: 10, color: Colors.amber),
+                                        const Icon(
+                                          LucideIcons.edit2,
+                                          size: 10,
+                                          color: Colors.amber,
+                                        ),
                                         const SizedBox(width: 4),
-                                        Text('Edited', style: GoogleFonts.plusJakartaSans(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        Text(
+                                          'Edited',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: Colors.amber,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -1070,30 +1618,67 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('₹${oldAmt.toStringAsFixed(0)} → ₹${newAmt.toStringAsFixed(0)}',
-                                        style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontSize: 12)),
-                                    Text('by $editorName · $timeStr',
-                                        style: GoogleFonts.plusJakartaSans(color: Colors.white38, fontSize: 11)),
-                                    if (realUnit?.donationItem != null && realUnit!.donationItem!.isNotEmpty) ...[
+                                    Text(
+                                      '₹${oldAmt.toStringAsFixed(0)} → ₹${newAmt.toStringAsFixed(0)}',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        color: Colors.white54,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    Text(
+                                      'by $editorName · $timeStr',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        color: Colors.white38,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    if (realUnit?.donationItem != null &&
+                                        realUnit!.donationItem!.isNotEmpty) ...[
                                       const SizedBox(height: 4),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.accent.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
                                         ),
-                                        child: Text('🎁 ${realUnit.donationItem}', style: GoogleFonts.plusJakartaSans(color: AppColors.accent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.accent.withValues(
+                                            alpha: 0.15,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '🎁 ${realUnit.donationItem}',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: AppColors.accent,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ],
                                 ),
                               ),
-                              trailing: Text('$deltaSign₹${delta.abs().toStringAsFixed(0)}',
-                                  style: GoogleFonts.plusJakartaSans(color: deltaColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                              trailing: Text(
+                                '$deltaSign₹${delta.abs().toStringAsFixed(0)}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: deltaColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                               onTap: () async {
                                 // Open the real unit's info dialog (same as clicking a regular card)
                                 if (realUnit != null) {
-                                  await showUnitAmountForm(context, ref, realBuilding, realUnit, fromReports: true);
+                                  await showUnitAmountForm(
+                                    context,
+                                    ref,
+                                    realBuilding,
+                                    realUnit,
+                                    fromReports: true,
+                                  );
                                   setState(() => _loadData());
                                 }
                               },
@@ -1102,75 +1687,154 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                         );
                       }
 
-
                       // ── Normal collection card ────────────────────────────
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
                         child: Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           color: const Color(0xFF1E1E1E),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
                           ),
                           child: ListTile(
-                            leading: unit.photoBase64 != null 
-                                ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(base64Decode(unit.photoBase64!), width: 50, height: 50, fit: BoxFit.cover))
-                                : const Icon(LucideIcons.imageOff, size: 50, color: Colors.white24),
-                            title: Text('${building.name} - ${unit.unitLabel}', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+                            leading: unit.photoBase64 != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.memory(
+                                      base64Decode(unit.photoBase64!),
+                                      width: 50,
+                                      height: 50,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                : const Icon(
+                                    LucideIcons.imageOff,
+                                    size: 50,
+                                    color: Colors.white24,
+                                  ),
+                            title: Text(
+                              '${building.name} - ${unit.unitLabel}',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4),
                               child: Row(
                                 children: [
-                                  Text(timeStr, style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontSize: 13)),
+                                  Text(
+                                    timeStr,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: Colors.white54,
+                                      fontSize: 13,
+                                    ),
+                                  ),
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: unit.paymentMethod == 'UPI' ? AppColors.purple.withValues(alpha: 0.2) : AppColors.amber.withValues(alpha: 0.2),
+                                      color: unit.paymentMethod == 'UPI'
+                                          ? AppColors.purple.withValues(
+                                              alpha: 0.2,
+                                            )
+                                          : AppColors.amber.withValues(
+                                              alpha: 0.2,
+                                            ),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Text(unit.paymentMethod ?? 'Unknown', style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 10,
-                                      color: unit.paymentMethod == 'UPI' ? AppColors.purple : AppColors.amber,
-                                      fontWeight: FontWeight.bold,
-                                    )),
+                                    child: Text(
+                                      unit.paymentMethod ?? 'Unknown',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        color: unit.paymentMethod == 'UPI'
+                                            ? AppColors.purple
+                                            : AppColors.amber,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                   // Show "edited" indicator on the normal card too if it was corrected
-                                  if (unit.originalAmount != null) ...[ 
+                                  if (unit.originalAmount != null) ...[
                                     const SizedBox(width: 6),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 1,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: Colors.amber.withValues(alpha: 0.12),
+                                        color: Colors.amber.withValues(
+                                          alpha: 0.12,
+                                        ),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: Text('edited', style: GoogleFonts.plusJakartaSans(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.w600)),
+                                      child: Text(
+                                        'edited',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: Colors.amber,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                                     ),
                                   ],
-                                  if (unit.donationItem != null && unit.donationItem!.isNotEmpty) ...[
+                                  if (unit.donationItem != null &&
+                                      unit.donationItem!.isNotEmpty) ...[
                                     const SizedBox(width: 6),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 1,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: AppColors.accent.withValues(alpha: 0.15),
+                                        color: AppColors.accent.withValues(
+                                          alpha: 0.15,
+                                        ),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: Text('🎁 ${unit.donationItem}', style: GoogleFonts.plusJakartaSans(color: AppColors.accent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      child: Text(
+                                        '🎁 ${unit.donationItem}',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: AppColors.accent,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ],
                               ),
                             ),
-                            trailing: Text('₹${unit.amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
+                            trailing: Text(
+                              '₹${unit.amount.toStringAsFixed(0)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppColors.green,
+                              ),
+                            ),
                             onTap: () async {
-                              await showUnitAmountForm(context, ref, building, unit, fromReports: true);
+                              await showUnitAmountForm(
+                                context,
+                                ref,
+                                building,
+                                unit,
+                                fromReports: true,
+                              );
                               setState(() => _loadData());
                             },
                           ),
                         ),
                       );
-
                     },
                     childCount: items.length + 1, // +1 for the header
                   ),
@@ -1178,92 +1842,138 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
               }),
             if (isAdmin && _showCollectorsView)
               SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    Map<String, double> collectorTotals = {};
-                    Map<String, List<Map<String, dynamic>>> collectorItems = {};
-                    for (var item in collections) {
-                       final Unit unit = item['unit'];
-                       if (unit.collectedBy != null) {
-                          collectorTotals[unit.collectedBy!] = (collectorTotals[unit.collectedBy!] ?? 0) + unit.amount;
-                          collectorItems.putIfAbsent(unit.collectedBy!, () => []).add(item);
-                       }
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  Map<String, double> collectorTotals = {};
+                  Map<String, List<Map<String, dynamic>>> collectorItems = {};
+                  for (var item in collections) {
+                    final Unit unit = item['unit'];
+                    if (unit.collectedBy != null) {
+                      collectorTotals[unit.collectedBy!] =
+                          (collectorTotals[unit.collectedBy!] ?? 0) +
+                          unit.amount;
+                      collectorItems
+                          .putIfAbsent(unit.collectedBy!, () => [])
+                          .add(item);
                     }
-                    
-                    final sortedCollectors = List<Collector>.from(collectors);
-                    sortedCollectors.sort((a, b) => (collectorTotals[b.id] ?? 0).compareTo(collectorTotals[a.id] ?? 0));
-                    
-                    final collector = sortedCollectors[index];
-                    final total = collectorTotals[collector.id] ?? 0.0;
-                    if (total == 0) return const SizedBox.shrink();
+                  }
 
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      color: const Color(0xFF1E1E1E),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  final sortedCollectors = List<Collector>.from(collectors);
+                  sortedCollectors.sort(
+                    (a, b) => (collectorTotals[b.id] ?? 0).compareTo(
+                      collectorTotals[a.id] ?? 0,
+                    ),
+                  );
+
+                  final collector = sortedCollectors[index];
+                  final total = collectorTotals[collector.id] ?? 0.0;
+                  if (total == 0) return const SizedBox.shrink();
+
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    color: const Color(0xFF1E1E1E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.1),
                       ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                          backgroundImage: collector.photoUrl != null ? NetworkImage(collector.photoUrl!) : null,
-                          child: collector.photoUrl == null ? Icon(LucideIcons.user, color: AppColors.accent) : null,
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      leading: CircleAvatar(
+                        backgroundColor: AppColors.accent.withValues(
+                          alpha: 0.2,
                         ),
-                        title: Text(collector.name, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
-                        subtitle: Text('Rank #${index + 1}', style: GoogleFonts.plusJakartaSans(color: Colors.white54)),
-                        trailing: Text('₹${total.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
-                        onTap: () {
-                           Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
-                             collectorName: collector.name,
-                             collections: collectorItems[collector.id] ?? [],
-                             isViewer: isViewer,
-                           )));
-                        },
+                        backgroundImage: collector.photoUrl != null
+                            ? NetworkImage(collector.photoUrl!)
+                            : null,
+                        child: collector.photoUrl == null
+                            ? Icon(LucideIcons.user, color: AppColors.accent)
+                            : null,
                       ),
-                    );
-                  },
-                  childCount: collectors.length,
-                ),
+                      title: Text(
+                        collector.name,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Rank #${index + 1}',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white54,
+                        ),
+                      ),
+                      trailing: Text(
+                        '₹${total.toStringAsFixed(0)}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppColors.green,
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CollectorReportScreen(
+                              collectorName: collector.name,
+                              collections: collectorItems[collector.id] ?? [],
+                              isViewer: isViewer,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                }, childCount: collectors.length),
               ),
             const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
           ],
         );
-      }
+      },
     );
   }
 
   Widget _buildChart(Map<DateTime, double> dailyTotalsMap) {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    
+
     List<BarChartGroupData> barGroups = [];
     List<String> labels = [];
     double maxY = 0;
-    
-    for(int i=6; i>=0; i--) {
-       final d = todayStart.subtract(Duration(days: i));
-       final val = dailyTotalsMap[d] ?? 0.0;
-       if (val > maxY) maxY = val;
-       
-       barGroups.add(BarChartGroupData(
-         x: 6 - i,
-         barRods: [
-           BarChartRodData(
-             toY: val,
-             gradient: LinearGradient(
-               colors: [AppColors.accentLight, AppColors.accent],
-               begin: Alignment.bottomCenter,
-               end: Alignment.topCenter,
-             ),
-             width: 16,
-             borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-           ),
-         ],
-         showingTooltipIndicators: (6 - i) == _touchedBarIndex ? [0] : [],
-       ));
-       labels.add('${d.day}/${d.month}');
+
+    for (int i = 6; i >= 0; i--) {
+      final d = todayStart.subtract(Duration(days: i));
+      final val = dailyTotalsMap[d] ?? 0.0;
+      if (val > maxY) maxY = val;
+
+      barGroups.add(
+        BarChartGroupData(
+          x: 6 - i,
+          barRods: [
+            BarChartRodData(
+              toY: val,
+              gradient: LinearGradient(
+                colors: [AppColors.accentLight, AppColors.accent],
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+              ),
+              width: 16,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(6),
+              ),
+            ),
+          ],
+          showingTooltipIndicators: (6 - i) == _touchedBarIndex ? [0] : [],
+        ),
+      );
+      labels.add('${d.day}/${d.month}');
     }
     if (maxY == 0) maxY = 100;
 
@@ -1279,16 +1989,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                 if (value >= 0 && value < 7) {
                   return Padding(
                     padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(labels[value.toInt()], style: GoogleFonts.plusJakartaSans(fontSize: 10, color: AppColors.textSecondary)),
+                    child: Text(
+                      labels[value.toInt()],
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   );
                 }
                 return const Text('');
               },
             ),
           ),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
         ),
         borderData: FlBorderData(show: false),
         maxY: maxY * 1.2,
@@ -1298,11 +2020,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           handleBuiltInTouches: false,
           touchCallback: (FlTouchEvent event, barTouchResponse) {
             if (event is FlTapDownEvent) {
-               if (barTouchResponse != null && barTouchResponse.spot != null) {
-                  setState(() {
-                    _touchedBarIndex = barTouchResponse.spot!.touchedBarGroupIndex;
-                  });
-               }
+              if (barTouchResponse != null && barTouchResponse.spot != null) {
+                setState(() {
+                  _touchedBarIndex =
+                      barTouchResponse.spot!.touchedBarGroupIndex;
+                });
+              }
             }
           },
           touchTooltipData: BarTouchTooltipData(
@@ -1310,7 +2033,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               return BarTooltipItem(
                 '₹${rod.toY.toStringAsFixed(0)}',
-                GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                GoogleFonts.plusJakartaSans(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               );
             },
           ),
@@ -1345,7 +2072,9 @@ class _TeamFundFormState extends State<_TeamFundForm> {
   void initState() {
     super.initState();
     _isPaid = widget.member.fundStatus == 'paid';
-    _amountController = TextEditingController(text: widget.member.fundAmount?.toStringAsFixed(0) ?? '');
+    _amountController = TextEditingController(
+      text: widget.member.fundAmount?.toStringAsFixed(0) ?? '',
+    );
     _paymentMethod = widget.member.fundPaymentMethod ?? 'UPI';
   }
 
@@ -1357,7 +2086,9 @@ class _TeamFundFormState extends State<_TeamFundForm> {
 
   Future<void> _save() async {
     if (_isPaid && _amountController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
       return;
     }
 
@@ -1374,12 +2105,20 @@ class _TeamFundFormState extends State<_TeamFundForm> {
         widget.onSave();
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Updated successfully', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text(
+              'Updated successfully',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -1416,10 +2155,16 @@ class _TeamFundFormState extends State<_TeamFundForm> {
             ],
           ),
           const SizedBox(height: 20),
-          
+
           Row(
             children: [
-              Text('Status: ', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 16)),
+              Text(
+                'Status: ',
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white70,
+                  fontSize: 16,
+                ),
+              ),
               const SizedBox(width: 16),
               ChoiceChip(
                 label: const Text('Pending'),
@@ -1428,7 +2173,9 @@ class _TeamFundFormState extends State<_TeamFundForm> {
                   if (val) setState(() => _isPaid = false);
                 },
                 selectedColor: Colors.orange.withValues(alpha: 0.2),
-                labelStyle: TextStyle(color: !_isPaid ? Colors.orange[400] : Colors.white70),
+                labelStyle: TextStyle(
+                  color: !_isPaid ? Colors.orange[400] : Colors.white70,
+                ),
                 backgroundColor: const Color(0xFF2C2C2C),
               ),
               const SizedBox(width: 12),
@@ -1439,12 +2186,14 @@ class _TeamFundFormState extends State<_TeamFundForm> {
                   if (val) setState(() => _isPaid = true);
                 },
                 selectedColor: Colors.green.withValues(alpha: 0.2),
-                labelStyle: TextStyle(color: _isPaid ? Colors.green[400] : Colors.white70),
+                labelStyle: TextStyle(
+                  color: _isPaid ? Colors.green[400] : Colors.white70,
+                ),
                 backgroundColor: const Color(0xFF2C2C2C),
               ),
             ],
           ),
-          
+
           if (_isPaid) ...[
             const SizedBox(height: 24),
             TextField(
@@ -1454,7 +2203,10 @@ class _TeamFundFormState extends State<_TeamFundForm> {
               decoration: InputDecoration(
                 labelText: 'Amount (₹)',
                 labelStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(Icons.currency_rupee, color: Colors.white54),
+                prefixIcon: const Icon(
+                  Icons.currency_rupee,
+                  color: Colors.white54,
+                ),
                 filled: true,
                 fillColor: const Color(0xFF2C2C2C),
                 border: OutlineInputBorder(
@@ -1464,8 +2216,14 @@ class _TeamFundFormState extends State<_TeamFundForm> {
               ),
             ),
             const SizedBox(height: 20),
-            
-            Text('Payment Method', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+
+            Text(
+              'Payment Method',
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1475,10 +2233,14 @@ class _TeamFundFormState extends State<_TeamFundForm> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        color: _paymentMethod == 'UPI' ? const Color(0xFF5E5CE6).withValues(alpha: 0.2) : const Color(0xFF2C2C2C),
+                        color: _paymentMethod == 'UPI'
+                            ? const Color(0xFF5E5CE6).withValues(alpha: 0.2)
+                            : const Color(0xFF2C2C2C),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: _paymentMethod == 'UPI' ? const Color(0xFF5E5CE6) : Colors.transparent,
+                          color: _paymentMethod == 'UPI'
+                              ? const Color(0xFF5E5CE6)
+                              : Colors.transparent,
                           width: 2,
                         ),
                       ),
@@ -1486,7 +2248,9 @@ class _TeamFundFormState extends State<_TeamFundForm> {
                       child: Text(
                         'UPI',
                         style: GoogleFonts.plusJakartaSans(
-                          color: _paymentMethod == 'UPI' ? const Color(0xFF5E5CE6) : Colors.white54,
+                          color: _paymentMethod == 'UPI'
+                              ? const Color(0xFF5E5CE6)
+                              : Colors.white54,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1500,10 +2264,14 @@ class _TeamFundFormState extends State<_TeamFundForm> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        color: _paymentMethod == 'Cash' ? Colors.green.withValues(alpha: 0.2) : const Color(0xFF2C2C2C),
+                        color: _paymentMethod == 'Cash'
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : const Color(0xFF2C2C2C),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: _paymentMethod == 'Cash' ? Colors.green : Colors.transparent,
+                          color: _paymentMethod == 'Cash'
+                              ? Colors.green
+                              : Colors.transparent,
                           width: 2,
                         ),
                       ),
@@ -1511,7 +2279,9 @@ class _TeamFundFormState extends State<_TeamFundForm> {
                       child: Text(
                         'Cash',
                         style: GoogleFonts.plusJakartaSans(
-                          color: _paymentMethod == 'Cash' ? Colors.green : Colors.white54,
+                          color: _paymentMethod == 'Cash'
+                              ? Colors.green
+                              : Colors.white54,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1521,7 +2291,7 @@ class _TeamFundFormState extends State<_TeamFundForm> {
               ],
             ),
           ],
-          
+
           const SizedBox(height: 32),
           ElevatedButton(
             onPressed: _isSaving ? null : _save,
@@ -1529,12 +2299,27 @@ class _TeamFundFormState extends State<_TeamFundForm> {
               backgroundColor: const Color(0xFF5E5CE6),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               elevation: 0,
             ),
             child: _isSaving
-                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text('Save Update', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    'Save Update',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -1577,10 +2362,12 @@ class _SpendingCardState extends State<_SpendingCard> {
             _isExpanded = !_isExpanded;
           });
         },
-        onLongPress: widget.isAdmin ? () {
-          // If you really want long press to do something specific, you can add it here.
-          // Currently, tapping expands the card which shows the delete/edit options.
-        } : null,
+        onLongPress: widget.isAdmin
+            ? () {
+                // If you really want long press to do something specific, you can add it here.
+                // Currently, tapping expands the card which shows the delete/edit options.
+              }
+            : null,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -1591,22 +2378,45 @@ class _SpendingCardState extends State<_SpendingCard> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(widget.spending.reason, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16)),
+                    child: Text(
+                      widget.spending.reason,
+                      style: GoogleFonts.plusJakartaSans(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
-                  Text('₹${widget.spending.amount.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text(
+                    '₹${widget.spending.amount.toStringAsFixed(0)}',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ],
               ),
               if (_isExpanded) ...[
                 const SizedBox(height: 12),
                 const Divider(color: Colors.white12),
                 const SizedBox(height: 12),
-                Text('By: ${widget.spending.createdByName}', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+                Text(
+                  'By: ${widget.spending.createdByName}',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
                 if (widget.spending.createdAt != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      'Date: ${widget.spending.createdAt!.day.toString().padLeft(2, '0')}/${widget.spending.createdAt!.month.toString().padLeft(2, '0')}/${widget.spending.createdAt!.year} at ${widget.spending.createdAt!.hour.toString().padLeft(2, '0')}:${widget.spending.createdAt!.minute.toString().padLeft(2, '0')}', 
-                      style: GoogleFonts.plusJakartaSans(color: Colors.white54, fontSize: 13),
+                      'Date: ${widget.spending.createdAt!.day.toString().padLeft(2, '0')}/${widget.spending.createdAt!.month.toString().padLeft(2, '0')}/${widget.spending.createdAt!.year} at ${widget.spending.createdAt!.hour.toString().padLeft(2, '0')}:${widget.spending.createdAt!.minute.toString().padLeft(2, '0')}',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: Colors.white54,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 if (widget.spending.photoBase64 != null)
@@ -1614,7 +2424,11 @@ class _SpendingCardState extends State<_SpendingCard> {
                     padding: const EdgeInsets.only(top: 16),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.memory(base64Decode(widget.spending.photoBase64!), width: double.infinity, fit: BoxFit.contain),
+                      child: Image.memory(
+                        base64Decode(widget.spending.photoBase64!),
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                 if (widget.isAdmin) ...[
@@ -1623,14 +2437,32 @@ class _SpendingCardState extends State<_SpendingCard> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       TextButton.icon(
-                        icon: Icon(LucideIcons.edit2, color: Colors.white.withValues(alpha: 0.7), size: 16),
-                        label: Text('Edit', style: GoogleFonts.plusJakartaSans(color: Colors.white70)),
+                        icon: Icon(
+                          LucideIcons.edit2,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          size: 16,
+                        ),
+                        label: Text(
+                          'Edit',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white70,
+                          ),
+                        ),
                         onPressed: widget.onEdit,
                       ),
                       const SizedBox(width: 8),
                       TextButton.icon(
-                        icon: Icon(LucideIcons.trash2, color: Colors.redAccent.withValues(alpha: 0.8), size: 16),
-                        label: Text('Delete', style: GoogleFonts.plusJakartaSans(color: Colors.redAccent)),
+                        icon: Icon(
+                          LucideIcons.trash2,
+                          color: Colors.redAccent.withValues(alpha: 0.8),
+                          size: 16,
+                        ),
+                        label: Text(
+                          'Delete',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.redAccent,
+                          ),
+                        ),
                         onPressed: widget.onDelete,
                       ),
                     ],

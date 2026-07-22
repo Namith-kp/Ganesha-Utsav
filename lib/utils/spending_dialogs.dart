@@ -7,11 +7,17 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../models/spending.dart';
 import '../services/spending_service.dart';
 
-Future<bool?> showAddSpendingBottomSheet(BuildContext context, SpendingService spendingService, String createdBy, String createdByName) async {
+Future<bool?> showAddSpendingBottomSheet(
+  BuildContext context,
+  SpendingService spendingService,
+  String createdBy,
+  String createdByName,
+) async {
   return await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
+    constraints: const BoxConstraints(maxWidth: 800),
     builder: (context) => _SpendingForm(
       spendingService: spendingService,
       createdBy: createdBy,
@@ -20,11 +26,16 @@ Future<bool?> showAddSpendingBottomSheet(BuildContext context, SpendingService s
   );
 }
 
-Future<bool?> showEditSpendingBottomSheet(BuildContext context, SpendingService spendingService, Spending spending) async {
+Future<bool?> showEditSpendingBottomSheet(
+  BuildContext context,
+  SpendingService spendingService,
+  Spending spending,
+) async {
   return await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
+    constraints: const BoxConstraints(maxWidth: 800),
     builder: (context) => _SpendingForm(
       spendingService: spendingService,
       existingSpending: spending,
@@ -61,8 +72,12 @@ class _SpendingFormState extends State<_SpendingForm> {
   @override
   void initState() {
     super.initState();
-    _amountController = TextEditingController(text: widget.existingSpending?.amount.toStringAsFixed(0) ?? '');
-    _reasonController = TextEditingController(text: widget.existingSpending?.reason ?? '');
+    _amountController = TextEditingController(
+      text: widget.existingSpending?.amount.toStringAsFixed(0) ?? '',
+    );
+    _reasonController = TextEditingController(
+      text: widget.existingSpending?.reason ?? '',
+    );
   }
 
   @override
@@ -73,7 +88,12 @@ class _SpendingFormState extends State<_SpendingForm> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    final pickedFile = await _picker.pickImage(source: source, imageQuality: 70, maxWidth: 800, maxHeight: 800);
+    final pickedFile = await _picker.pickImage(
+      source: source,
+      imageQuality: 70,
+      maxWidth: 800,
+      maxHeight: 800,
+    );
     if (pickedFile != null) {
       final bytes = await pickedFile.readAsBytes();
       setState(() {
@@ -88,7 +108,9 @@ class _SpendingFormState extends State<_SpendingForm> {
 
     if (amount <= 0 || reason.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid amount and reason.')),
+        const SnackBar(
+          content: Text('Please enter a valid amount and reason.'),
+        ),
       );
       return;
     }
@@ -121,9 +143,9 @@ class _SpendingFormState extends State<_SpendingForm> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save spending: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save spending: $e')));
       }
     } finally {
       if (mounted) {
@@ -137,7 +159,7 @@ class _SpendingFormState extends State<_SpendingForm> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    
+
     return Container(
       margin: EdgeInsets.only(bottom: bottomInset),
       decoration: const BoxDecoration(
@@ -159,7 +181,7 @@ class _SpendingFormState extends State<_SpendingForm> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          
+
           // Amount
           TextField(
             controller: _amountController,
@@ -168,7 +190,10 @@ class _SpendingFormState extends State<_SpendingForm> {
             decoration: InputDecoration(
               labelText: 'Amount (₹)',
               labelStyle: const TextStyle(color: Colors.white54),
-              prefixIcon: const Icon(LucideIcons.indianRupee, color: Colors.white54),
+              prefixIcon: const Icon(
+                LucideIcons.indianRupee,
+                color: Colors.white54,
+              ),
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.05),
               border: OutlineInputBorder(
@@ -178,7 +203,7 @@ class _SpendingFormState extends State<_SpendingForm> {
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Reason
           TextField(
             controller: _reasonController,
@@ -186,7 +211,10 @@ class _SpendingFormState extends State<_SpendingForm> {
             decoration: InputDecoration(
               labelText: 'Reason / Item Details',
               labelStyle: const TextStyle(color: Colors.white54),
-              prefixIcon: const Icon(LucideIcons.fileText, color: Colors.white54),
+              prefixIcon: const Icon(
+                LucideIcons.fileText,
+                color: Colors.white54,
+              ),
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.05),
               border: OutlineInputBorder(
@@ -198,15 +226,26 @@ class _SpendingFormState extends State<_SpendingForm> {
           const SizedBox(height: 24),
 
           // Image Proof Section
-          Text('Proof of Spending (Optional)', style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14)),
+          Text(
+            'Proof of Spending (Optional)',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
           const SizedBox(height: 12),
-          
+
           if (_photoBase64 != null)
             Stack(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(base64Decode(_photoBase64!), height: 120, width: double.infinity, fit: BoxFit.cover),
+                  child: Image.memory(
+                    base64Decode(_photoBase64!),
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
                 Positioned(
                   top: 8,
@@ -215,8 +254,15 @@ class _SpendingFormState extends State<_SpendingForm> {
                     onTap: () => setState(() => _photoBase64 = null),
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                      child: const Icon(Icons.close, color: Colors.white, size: 20),
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ),
@@ -227,7 +273,12 @@ class _SpendingFormState extends State<_SpendingForm> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(base64Decode(widget.existingSpending!.photoBase64!), height: 120, width: double.infinity, fit: BoxFit.cover),
+                  child: Image.memory(
+                    base64Decode(widget.existingSpending!.photoBase64!),
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
                 Positioned(
                   top: 8,
@@ -238,8 +289,15 @@ class _SpendingFormState extends State<_SpendingForm> {
                     }),
                     child: Container(
                       padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                      child: const Icon(LucideIcons.edit2, color: Colors.white, size: 16),
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        LucideIcons.edit2,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                     ),
                   ),
                 ),
@@ -255,9 +313,13 @@ class _SpendingFormState extends State<_SpendingForm> {
                     label: const Text('Camera'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -269,9 +331,13 @@ class _SpendingFormState extends State<_SpendingForm> {
                     label: const Text('Gallery'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -279,7 +345,7 @@ class _SpendingFormState extends State<_SpendingForm> {
             ),
 
           const SizedBox(height: 32),
-          
+
           ElevatedButton(
             onPressed: _isLoading ? null : _saveSpending,
             style: ElevatedButton.styleFrom(
@@ -292,10 +358,22 @@ class _SpendingFormState extends State<_SpendingForm> {
               elevation: 0,
             ),
             child: _isLoading
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
                 : Text(
-                    widget.existingSpending == null ? 'Save Spending' : 'Update Spending',
-                    style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600),
+                    widget.existingSpending == null
+                        ? 'Save Spending'
+                        : 'Update Spending',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
           ),
         ],

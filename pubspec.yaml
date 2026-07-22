@@ -63,6 +63,7 @@ dependencies:
 
   intl: any
   firebase_storage: ^13.3.0
+  flutter_native_splash: ^2.4.8
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -115,3 +116,7 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+dependency_overrides:
+  flutter_google_street_view:
+    path: ./flutter_google_street_view_patched

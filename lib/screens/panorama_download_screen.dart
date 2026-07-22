@@ -17,7 +17,8 @@ class PanoramaDownloadScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<PanoramaDownloadScreen> createState() => _PanoramaDownloadScreenState();
+  ConsumerState<PanoramaDownloadScreen> createState() =>
+      _PanoramaDownloadScreenState();
 }
 
 class _PanoramaDownloadScreenState extends ConsumerState<PanoramaDownloadScreen>
@@ -104,7 +105,9 @@ class _PromptView extends StatelessWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.gold.withValues(alpha: 0.15 + pulseCtrl.value * 0.25),
+                      color: AppColors.gold.withValues(
+                        alpha: 0.15 + pulseCtrl.value * 0.25,
+                      ),
                       blurRadius: 30 + pulseCtrl.value * 20,
                       spreadRadius: 4,
                     ),
@@ -118,8 +121,11 @@ class _PromptView extends StatelessWidget {
                   color: AppColors.bgCard,
                   border: Border.all(color: AppColors.borderLight),
                 ),
-                child: const Icon(LucideIcons.downloadCloud,
-                    size: 52, color: AppColors.accent),
+                child: const Icon(
+                  LucideIcons.downloadCloud,
+                  size: 52,
+                  color: AppColors.accent,
+                ),
               ),
             ),
             const SizedBox(height: 32),
@@ -161,7 +167,10 @@ class _PromptView extends StatelessWidget {
               children: [
                 _InfoChip(icon: LucideIcons.wifiOff, label: 'Works Offline'),
                 _InfoChip(icon: LucideIcons.zap, label: 'Instant Loading'),
-                _InfoChip(icon: LucideIcons.refreshCw, label: 'Skips Downloaded'),
+                _InfoChip(
+                  icon: LucideIcons.refreshCw,
+                  label: 'Skips Downloaded',
+                ),
               ],
             ),
             const SizedBox(height: 44),
@@ -177,7 +186,11 @@ class _PromptView extends StatelessWidget {
             // Skip button
             TextButton.icon(
               onPressed: onSkip,
-              icon: const Icon(LucideIcons.wifi, size: 18, color: AppColors.textMuted),
+              icon: const Icon(
+                LucideIcons.wifi,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
               label: Text(
                 'Skip — Use Online Mode',
                 style: GoogleFonts.plusJakartaSans(
@@ -231,7 +244,9 @@ class _DownloadingView extends ConsumerWidget {
                           value: value,
                           strokeWidth: 5,
                           backgroundColor: AppColors.border,
-                          valueColor: const AlwaysStoppedAnimation(AppColors.accent),
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppColors.accent,
+                          ),
                         ),
                         Text(
                           '${(value * 100).toInt()}%',
@@ -248,7 +263,9 @@ class _DownloadingView extends ConsumerWidget {
                 const SizedBox(height: 36),
 
                 Text(
-                  progress.isDone ? 'Download Complete! 🎉' : 'Downloading Panoramas...',
+                  progress.isDone
+                      ? 'Download Complete! 🎉'
+                      : 'Downloading Panoramas...',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     letterSpacing: -0.5,
@@ -268,7 +285,9 @@ class _DownloadingView extends ConsumerWidget {
                       value: value,
                       minHeight: 8,
                       backgroundColor: AppColors.bgCard,
-                      valueColor: const AlwaysStoppedAnimation(AppColors.accent),
+                      valueColor: const AlwaysStoppedAnimation(
+                        AppColors.accent,
+                      ),
                     ),
                   ),
                 ),
@@ -318,13 +337,25 @@ class _DownloadingView extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(LucideIcons.alertCircle, color: AppColors.crimson, size: 52),
+              const Icon(
+                LucideIcons.alertCircle,
+                color: AppColors.crimson,
+                size: 52,
+              ),
               const SizedBox(height: 16),
-              Text('Download failed:\n$err',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
+              Text(
+                'Download failed:\n$err',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppColors.textSecondary,
+                ),
+              ),
               const SizedBox(height: 24),
-              _GoldButton(label: 'Open Online Mode', icon: LucideIcons.wifi, onTap: onDone),
+              _GoldButton(
+                label: 'Open Online Mode',
+                icon: LucideIcons.wifi,
+                onTap: onDone,
+              ),
             ],
           ),
         ),
@@ -354,9 +385,13 @@ class _InfoChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: AppColors.accent),
           const SizedBox(width: 6),
-          Text(label,
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12, color: AppColors.textSecondary)),
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
         ],
       ),
     );
@@ -364,7 +399,11 @@ class _InfoChip extends StatelessWidget {
 }
 
 class _GoldButton extends StatelessWidget {
-  const _GoldButton({required this.label, required this.icon, required this.onTap});
+  const _GoldButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
   final String label;
   final IconData icon;
   final VoidCallback onTap;
@@ -398,12 +437,14 @@ class _GoldButton extends StatelessWidget {
               children: [
                 Icon(icon, color: Colors.white, size: 20),
                 const SizedBox(width: 8),
-                Text(label,
-                    style: GoogleFonts.plusJakartaSans(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    )),
+                Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
               ],
             ),
           ),

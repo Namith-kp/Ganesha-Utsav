@@ -26,9 +26,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Success is handled by the router listening to authStateChanges
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google Sign-In failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Google Sign-In failed: $e')));
       }
     } finally {
       if (mounted) {
@@ -69,18 +69,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ],
                     ),
-                    child: const Icon(LucideIcons.map, size: 48, color: AppColors.accent),
+                    child: const Icon(
+                      LucideIcons.map,
+                      size: 48,
+                      color: AppColors.accent,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 40),
-                
+
                 // Title
                 ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
                     colors: [AppColors.accent, AppColors.accentLight],
                   ).createShader(bounds),
                   child: Text(
-                    'Ganesha Tracker',
+                    'Ganesha Funds Tracker',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 32,
                       fontWeight: FontWeight.w800,
@@ -91,7 +95,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Subtitle
                 Text(
                   'Sign in to access your dashboard and manage street view collections.',
@@ -103,10 +107,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 48),
-                
+
                 // Action Button
                 if (_isLoading)
-                  const Center(child: CircularProgressIndicator(color: AppColors.accent))
+                  const Center(
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  )
                 else
                   SizedBox(
                     height: 54,
@@ -132,7 +138,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(LucideIcons.logIn, color: Colors.white, size: 20),
+                              const Icon(
+                                LucideIcons.logIn,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                               const SizedBox(width: 10),
                               Text(
                                 'Sign in with Google',
@@ -148,6 +158,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                   ),
+                const SizedBox(height: 64),
+                Center(
+                  child: Text(
+                    'Developed by Shree Vinayaka Geleyara Balaga',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: Colors.white30,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

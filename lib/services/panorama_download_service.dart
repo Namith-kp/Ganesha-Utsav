@@ -73,7 +73,11 @@ class PanoramaDownloadService {
     try {
       ids = await _fetchAllIds();
     } catch (e) {
-      yield DownloadProgress(completed: 0, total: 0, error: 'Failed to load metadata: $e');
+      yield DownloadProgress(
+        completed: 0,
+        total: 0,
+        error: 'Failed to load metadata: $e',
+      );
       return;
     }
 
@@ -112,10 +116,9 @@ class PanoramaDownloadService {
         yield DownloadProgress(completed: completed, total: total);
         if (completed >= total) break;
         // Check if futures resolved early (all done before tick)
-        final done = await allFutures.then((_) => true).timeout(
-          Duration.zero,
-          onTimeout: () => false,
-        );
+        final done = await allFutures
+            .then((_) => true)
+            .timeout(Duration.zero, onTimeout: () => false);
         if (done) break;
       }
 

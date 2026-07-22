@@ -10,7 +10,10 @@ final panoramaDownloadCompleteProvider = FutureProvider<bool>((ref) async {
 });
 
 // ── Local file path for a given panorama ID ────────────────────────────────
-final localPanoramaFileProvider = FutureProvider.family<File?, String>((ref, panoid) async {
+final localPanoramaFileProvider = FutureProvider.family<File?, String>((
+  ref,
+  panoid,
+) async {
   return PanoramaDownloadService.localFileFor(panoid);
 });
 

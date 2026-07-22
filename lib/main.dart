@@ -9,34 +9,34 @@ import 'router/app_router.dart';
 // ─── Design Tokens (mirrors web-app/style.css) ────────────────────────────────
 class AppColors {
   // Modern Zinc/Charcoal Palette
-  static const bgBase    = Color(0xFF09090B); // Zinc 950
-  static const bgCard    = Color(0xFF18181B); // Zinc 900
-  static const bgGlass   = Color(0xD018181B); 
-  static const border    = Color(0xFF27272A); // Zinc 800
+  static const bgBase = Color(0xFF09090B); // Zinc 950
+  static const bgCard = Color(0xFF18181B); // Zinc 900
+  static const bgGlass = Color(0xD018181B);
+  static const border = Color(0xFF27272A); // Zinc 800
   static const borderLight = Color(0xFF3F3F46); // Zinc 700
 
-  static const textPrimary   = Color(0xFFFAFAFA); // Zinc 50
+  static const textPrimary = Color(0xFFFAFAFA); // Zinc 50
   static const textSecondary = Color(0xFFA1A1AA); // Zinc 400
-  static const textMuted     = Color(0xFF71717A); // Zinc 500
+  static const textMuted = Color(0xFF71717A); // Zinc 500
 
   // Modern Accents
-  static const accent      = Color(0xFF6366F1); // Indigo 500
+  static const accent = Color(0xFF6366F1); // Indigo 500
   static const accentLight = Color(0xFF818CF8); // Indigo 400
-  
+
   // Aliases for old colors to prevent immediate breakage during refactoring
-  static const gold    = accent;
+  static const gold = accent;
   static const saffron = accentLight;
 
   static const crimson = Color(0xFFEF4444);
-  static const green   = Color(0xFF10B981);
-  static const blue    = Color(0xFF3B82F6);
-  static const purple  = Color(0xFF8B5CF6);
-  static const amber   = Color(0xFFF59E0B);
+  static const green = Color(0xFF10B981);
+  static const blue = Color(0xFF3B82F6);
+  static const purple = Color(0xFF8B5CF6);
+  static const amber = Color(0xFFF59E0B);
 
   // Pin colours
-  static const redPin    = Color(0xFFEF4444);
+  static const redPin = Color(0xFFEF4444);
   static const yellowPin = Color(0xFFF59E0B);
-  static const greenPin  = Color(0xFF10B981);
+  static const greenPin = Color(0xFF10B981);
 }
 
 void main() async {
@@ -50,26 +50,22 @@ void main() async {
   ]);
 
   // Dark status bar to match the dark theme
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: AppColors.bgBase,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: AppColors.bgBase,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
 
   // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Increase ImageCache size for panoramas
   PaintingBinding.instance.imageCache.maximumSizeBytes = 1024 * 1024 * 300;
 
-  runApp(
-    const ProviderScope(
-      child: MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends ConsumerWidget {
@@ -89,10 +85,11 @@ class MyApp extends ConsumerWidget {
   }
 
   ThemeData _buildDarkTheme() {
-    final base = GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme).apply(
-      bodyColor: AppColors.textPrimary,
-      displayColor: AppColors.textPrimary,
-    );
+    final base =
+        GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme).apply(
+          bodyColor: AppColors.textPrimary,
+          displayColor: AppColors.textPrimary,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -125,8 +122,13 @@ class MyApp extends ConsumerWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.accent,
           foregroundColor: Colors.white,
-          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 15),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 16),
           elevation: 0,
         ),
@@ -154,7 +156,9 @@ class MyApp extends ConsumerWidget {
         backgroundColor: AppColors.accent,
         foregroundColor: Colors.white,
         elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
       ),
       cardTheme: CardThemeData(
         color: AppColors.bgCard,
@@ -164,10 +168,15 @@ class MyApp extends ConsumerWidget {
           side: const BorderSide(color: AppColors.border, width: 0.5),
         ),
       ),
-      dividerTheme: const DividerThemeData(color: AppColors.border, thickness: 0.5),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.border,
+        thickness: 0.5,
+      ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.bgCard,
-        contentTextStyle: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary),
+        contentTextStyle: GoogleFonts.plusJakartaSans(
+          color: AppColors.textPrimary,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: AppColors.border, width: 0.5),

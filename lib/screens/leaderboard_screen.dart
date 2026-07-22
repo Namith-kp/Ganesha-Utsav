@@ -27,7 +27,9 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
   }
 
   void _loadData() {
-    _allCollectionsFuture = ref.read(buildingServiceProvider).getDetailedCollections(filterCollectorId: null);
+    _allCollectionsFuture = ref
+        .read(buildingServiceProvider)
+        .getDetailedCollections(filterCollectorId: null);
     _collectorsFuture = ref.read(authServiceProvider).getAllCollectors();
   }
 
@@ -54,73 +56,121 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
       body: FutureBuilder(
         future: Future.wait([_allCollectionsFuture!, _collectorsFuture!]),
         builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.accent));
-          if (snapshot.hasError) return Center(child: Text('Error: \${snapshot.error}', style: const TextStyle(color: Colors.red)));
+          if (snapshot.connectionState == ConnectionState.waiting)
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.accent),
+            );
+          if (snapshot.hasError)
+            return Center(
+              child: Text(
+                'Error: \${snapshot.error}',
+                style: const TextStyle(color: Colors.red),
+              ),
+            );
 
           final collections = snapshot.data![0] as List<Map<String, dynamic>>;
           final collectors = snapshot.data![1] as List<Collector>;
 
           Map<String, double> collectorTotals = {};
           Map<String, List<Map<String, dynamic>>> collectorItems = {};
-          
+
           for (var item in collections) {
-             final Unit unit = item['unit'];
-             if (unit.collectedBy != null) {
-                collectorTotals[unit.collectedBy!] = (collectorTotals[unit.collectedBy!] ?? 0) + unit.amount;
-                collectorItems.putIfAbsent(unit.collectedBy!, () => []).add(item);
-             }
+            final Unit unit = item['unit'];
+            if (unit.collectedBy != null) {
+              collectorTotals[unit.collectedBy!] =
+                  (collectorTotals[unit.collectedBy!] ?? 0) + unit.amount;
+              collectorItems.putIfAbsent(unit.collectedBy!, () => []).add(item);
+            }
           }
 
-          collectors.sort((a, b) => (collectorTotals[b.id] ?? 0).compareTo(collectorTotals[a.id] ?? 0));
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: collectors.length,
-            itemBuilder: (context, index) {
-               final collector = collectors[index];
-               final total = collectorTotals[collector.id] ?? 0.0;
-               if (total == 0) return const SizedBox.shrink();
-
-               return Card(
-                 color: AppColors.bgCard,
-                 margin: const EdgeInsets.only(bottom: 8),
-                 shape: RoundedRectangleBorder(
-                   borderRadius: BorderRadius.circular(12),
-                   side: const BorderSide(color: AppColors.border),
-                 ),
-                 child: ListTile(
-                   leading: CircleAvatar(
-                     backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                     foregroundColor: AppColors.accent,
-                     backgroundImage: collector.photoUrl != null ? NetworkImage(collector.photoUrl!) : null,
-                     child: collector.photoUrl == null ? const Icon(LucideIcons.user) : null,
-                   ),
-                   title: Text(
-                     collector.name,
-                     maxLines: 1,
-                     overflow: TextOverflow.ellipsis,
-                     style: GoogleFonts.plusJakartaSans(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-                   ),
-                   subtitle: Text('Rank #${index + 1}', style: GoogleFonts.plusJakartaSans(color: AppColors.textSecondary)),
-                   trailing: ConstrainedBox(
-                     constraints: const BoxConstraints(maxWidth: 120),
-                     child: FittedBox(
-                       fit: BoxFit.scaleDown,
-                       alignment: Alignment.centerRight,
-                       child: Text('₹${total.toStringAsFixed(0)}', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.green)),
-                     ),
-                   ),
-                   onTap: isAdmin ? () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => CollectorReportScreen(
-                        collectorName: collector.name,
-                        collections: collectorItems[collector.id] ?? [],
-                      )));
-                   } : null,
-                 ),
-               );
-            },
+          collectors.sort(
+            (a, b) => (collectorTotals[b.id] ?? 0).compareTo(
+              collectorTotals[a.id] ?? 0,
+            ),
           );
-        }
+
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: collectors.length,
+                itemBuilder: (context, index) {
+                  final collector = collectors[index];
+                  final total = collectorTotals[collector.id] ?? 0.0;
+                  if (total == 0) return const SizedBox.shrink();
+
+                  return Card(
+                    color: AppColors.bgCard,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: AppColors.border),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: AppColors.accent.withValues(
+                          alpha: 0.2,
+                        ),
+                        foregroundColor: AppColors.accent,
+                        backgroundImage: collector.photoUrl != null
+                            ? NetworkImage(collector.photoUrl!)
+                            : null,
+                        child: collector.photoUrl == null
+                            ? const Icon(LucideIcons.user)
+                            : null,
+                      ),
+                      title: Text(
+                        collector.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Rank #${index + 1}',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      trailing: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '₹${total.toStringAsFixed(0)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppColors.green,
+                            ),
+                          ),
+                        ),
+                      ),
+                      onTap: isAdmin
+                          ? () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CollectorReportScreen(
+                                    collectorName: collector.name,
+                                    collections:
+                                        collectorItems[collector.id] ?? [],
+                                  ),
+                                ),
+                              );
+                            }
+                          : null,
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }

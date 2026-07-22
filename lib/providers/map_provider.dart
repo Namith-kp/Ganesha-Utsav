@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/building_service.dart';
@@ -15,9 +16,10 @@ class FilterStatusNotifier extends Notifier<FilterStatus> {
   }
 }
 
-final filterStatusProvider = NotifierProvider<FilterStatusNotifier, FilterStatus>(() {
-  return FilterStatusNotifier();
-});
+final filterStatusProvider =
+    NotifierProvider<FilterStatusNotifier, FilterStatus>(() {
+      return FilterStatusNotifier();
+    });
 
 final buildingServiceProvider = Provider<BuildingService>((ref) {
   return BuildingService();
@@ -28,7 +30,10 @@ final buildingsProvider = StreamProvider<List<Building>>((ref) {
   return buildingService.streamBuildings();
 });
 
-final buildingUnitsProvider = StreamProvider.family<List<Unit>, String>((ref, buildingId) {
+final buildingUnitsProvider = StreamProvider.family<List<Unit>, String>((
+  ref,
+  buildingId,
+) {
   final buildingService = ref.watch(buildingServiceProvider);
   return buildingService.streamUnits(buildingId);
 });
@@ -42,7 +47,7 @@ final locationPermissionProvider = FutureProvider<bool>((ref) async {
     permission = await Geolocator.requestPermission();
     if (permission == LocationPermission.denied) return false;
   }
-  
+
   if (permission == LocationPermission.deniedForever) return false;
 
   return true;
@@ -77,7 +82,11 @@ final currentLocationProvider = FutureProvider<Position?>((ref) async {
   final hasPermission = await ref.watch(locationPermissionProvider.future);
   if (!hasPermission) return null;
 
-  final lastKnown = await Geolocator.getLastKnownPosition();
+  Position? lastKnown;
+  if (!kIsWeb) {
+    lastKnown = await Geolocator.getLastKnownPosition();
+  }
+
   if (lastKnown != null) {
     return lastKnown;
   }
@@ -91,10 +100,12 @@ final currentLocationProvider = FutureProvider<Position?>((ref) async {
 class MoveBuildingNotifier extends Notifier<Building?> {
   @override
   Building? build() => null;
-  
+
   void setState(Building? building) {
     state = building;
   }
 }
 
-final moveBuildingProvider = NotifierProvider<MoveBuildingNotifier, Building?>(MoveBuildingNotifier.new);
+final moveBuildingProvider = NotifierProvider<MoveBuildingNotifier, Building?>(
+  MoveBuildingNotifier.new,
+);

@@ -34,7 +34,11 @@ class StreetViewNode {
       roll: (json['roll'] as num).toDouble(),
       date: json['date'] as String? ?? '',
       address: json['address'] as String? ?? '',
-      neighbors: (json['neighbors'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+      neighbors:
+          (json['neighbors'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
     );
   }
 }

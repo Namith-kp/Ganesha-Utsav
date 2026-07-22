@@ -14,7 +14,7 @@ class SpendingService {
         .collection('spendings')
         .orderBy('createdAt', descending: true)
         .get();
-        
+
     return snapshot.docs.map((doc) => Spending.fromFirestore(doc)).toList();
   }
 
@@ -42,10 +42,7 @@ class SpendingService {
     required String reason,
     String? photoBase64,
   }) async {
-    final Map<String, dynamic> updates = {
-      'amount': amount,
-      'reason': reason,
-    };
+    final Map<String, dynamic> updates = {'amount': amount, 'reason': reason};
     if (photoBase64 != null) {
       updates['photoBase64'] = photoBase64;
     }

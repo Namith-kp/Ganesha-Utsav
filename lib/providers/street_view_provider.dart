@@ -8,7 +8,9 @@ import '../models/street_view_node.dart';
 const String baseUrl = 'https://pub-2e6c9cb2a1eb4eb98c8bae3105ebf165.r2.dev';
 
 // Provides the list of all street view nodes parsed from the JSON
-final streetViewNodesProvider = FutureProvider<List<StreetViewNode>>((ref) async {
+final streetViewNodesProvider = FutureProvider<List<StreetViewNode>>((
+  ref,
+) async {
   // Try mapped_metadata first, fallback to metadata
   final url = Uri.parse('$baseUrl/mapped_metadata.json');
   try {
@@ -57,9 +59,10 @@ class CurrentPanoramaIdNotifier extends Notifier<String?> {
 }
 
 // Tracks the ID of the panorama the user is currently viewing
-final currentPanoramaIdProvider = NotifierProvider<CurrentPanoramaIdNotifier, String?>(
-  CurrentPanoramaIdNotifier.new,
-);
+final currentPanoramaIdProvider =
+    NotifierProvider<CurrentPanoramaIdNotifier, String?>(
+      CurrentPanoramaIdNotifier.new,
+    );
 
 // A listener provider that handles the predictive pre-fetching
 final prefetchControllerProvider = Provider<void>((ref) {

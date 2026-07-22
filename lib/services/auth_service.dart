@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/collector.dart';
+
 class AuthService {
   final auth.FirebaseAuth _firebaseAuth = auth.FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -25,20 +26,27 @@ class AuthService {
   // Stream all collectors for Admin
   Stream<List<Collector>> streamAllCollectors() {
     return _firestore.collection('collectors').snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) => Collector.fromMap(doc.data(), doc.id)).toList();
+      return snapshot.docs
+          .map((doc) => Collector.fromMap(doc.data(), doc.id))
+          .toList();
     });
   }
 
   // Future all collectors
   Future<List<Collector>> getAllCollectors() async {
     final snapshot = await _firestore.collection('collectors').get();
-    return snapshot.docs.map((doc) => Collector.fromMap(doc.data(), doc.id)).toList();
+    return snapshot.docs
+        .map((doc) => Collector.fromMap(doc.data(), doc.id))
+        .toList();
   }
 
   // Sign in with Google
   Future<auth.UserCredential?> signInWithGoogle() async {
     try {
-      final googleUser = await GoogleSignIn().signIn();
+      final googleUser = await GoogleSignIn(
+        clientId:
+            '442465747713-9viehhaefh9dfrsip7kbkc1h246nk36q.apps.googleusercontent.com',
+      ).signIn();
       if (googleUser == null) return null; // user cancelled
 
       final googleAuth = await googleUser.authentication;
@@ -47,8 +55,10 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      final userCredential = await _firebaseAuth.signInWithCredential(credential);
-      
+      final userCredential = await _firebaseAuth.signInWithCredential(
+        credential,
+      );
+
       // Create Firestore profile only on first sign-in
       if (userCredential.user != null) {
         final uid = userCredential.user!.uid;
@@ -91,7 +101,10 @@ class AuthService {
   }
 
   // Update core team member status
-  Future<void> updateCollectorTeamStatus(String uid, bool isCoreTeamMember) async {
+  Future<void> updateCollectorTeamStatus(
+    String uid,
+    bool isCoreTeamMember,
+  ) async {
     await _firestore.collection('collectors').doc(uid).update({
       'isCoreTeamMember': isCoreTeamMember,
     });
@@ -122,7 +135,9 @@ class AuthService {
       'fundStatus': fundStatus,
       'fundAmount': fundAmount,
       'fundPaymentMethod': fundPaymentMethod,
-      'fundCollectedAt': fundStatus == 'paid' ? FieldValue.serverTimestamp() : null,
+      'fundCollectedAt': fundStatus == 'paid'
+          ? FieldValue.serverTimestamp()
+          : null,
       'fundCollectedBy': fundCollectedBy,
     };
     await _firestore.collection('collectors').doc(uid).update(updates);
@@ -130,7 +145,10 @@ class AuthService {
 
   // Sign out
   Future<void> signOut() async {
-    await GoogleSignIn().signOut();
+    await GoogleSignIn(
+      clientId:
+          '442465747713-9viehhaefh9dfrsip7kbkc1h246nk36q.apps.googleusercontent.com',
+    ).signOut();
     await _firebaseAuth.signOut();
   }
 }

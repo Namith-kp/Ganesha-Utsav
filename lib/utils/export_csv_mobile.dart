@@ -7,8 +7,7 @@ Future<void> exportCsv(String csvData) async {
   final path = '${dir.path}/collections_report.csv';
   final file = File(path);
   await file.writeAsString(csvData);
-  await SharePlus.instance.share(ShareParams(
-    files: [XFile(path)], 
-    text: 'Ganesha Funds Collection Report',
-  ));
+  await SharePlus.instance.share(
+    ShareParams(files: [XFile(path)], text: 'Ganesha Funds Collection Report'),
+  );
 }

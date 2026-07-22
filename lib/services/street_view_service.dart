@@ -84,33 +84,41 @@ class StreetViewService {
 
   String buildFindPanoramaRequestUrl(double lat, double lon, double radius) {
     final toggles = [
-      PbEnum(1), PbEnum(2), PbEnum(3), PbEnum(4), PbEnum(6), PbEnum(8), PbEnum(12)
+      PbEnum(1),
+      PbEnum(2),
+      PbEnum(3),
+      PbEnum(4),
+      PbEnum(6),
+      PbEnum(8),
+      PbEnum(12),
     ];
-    
+
     final searchMessage = <int, dynamic>{
       1: {
         1: 'apiv3',
         5: 'US',
-        11: {1: {1: false}}
+        11: {
+          1: {1: false},
+        },
       },
       2: {
-        1: {3: lat, 4: lon}, 
-        2: radius
+        1: {3: lat, 4: lon},
+        2: radius,
       },
       3: {
         2: {1: 'en', 2: 'US'},
         9: {1: PbEnum(2)},
         11: {
-          1: {1: PbEnum(2), 2: true, 3: PbEnum(2)}
+          1: {1: PbEnum(2), 2: true, 3: PbEnum(2)},
         },
       },
       4: {
         1: toggles,
         5: {1: PbEnum(2)},
         6: {1: PbEnum(2)},
-      }
+      },
     };
-    
+
     final pbString = toProtobufUrl(searchMessage);
     return "https://maps.googleapis.com/maps/api/js/GeoPhotoService.SingleImageSearch?pb=$pbString&callback=_xdc_._v2mub5";
   }
@@ -122,33 +130,35 @@ class StreetViewService {
       if (response.statusCode != 200) {
         throw Exception("API returned status code ${response.statusCode}");
       }
-      
+
       final text = response.body;
       final firstParen = text.indexOf("(");
       final lastParen = text.lastIndexOf(")");
       if (firstParen == -1 || lastParen == -1) {
         throw Exception("Invalid JSONP format: $text");
       }
-      
+
       final jsonString = "[${text.substring(firstParen + 1, lastParen)}]";
       final data = json.decode(jsonString) as List;
-      
+
       final responseCode = data[0][0][0];
       if (responseCode != 0) {
-        throw Exception("Google Maps returned error code $responseCode. Data: $data");
+        throw Exception(
+          "Google Maps returned error code $responseCode. Data: $data",
+        );
       }
-      
+
       final msg = data[0][1];
       if (msg == null || msg.length < 2) {
         throw Exception("Missing message data in response: $data");
       }
-      
+
       final panoid = msg[1][1] as String;
-      
+
       final latResponse = (msg[5][0][1][0][2] as num).toDouble();
       final lonResponse = (msg[5][0][1][0][3] as num).toDouble();
       final heading = (msg[5][0][1][2][0] as num).toDouble(); // degrees
-      
+
       return StreetViewPanorama(
         id: panoid,
         lat: latResponse,
@@ -200,7 +210,10 @@ class StreetViewService {
     );
   }
 
-  Future<Uint8List?> downloadPanoramaImage(String panoid, {int zoom = 2}) async {
+  Future<Uint8List?> downloadPanoramaImage(
+    String panoid, {
+    int zoom = 2,
+  }) async {
     try {
       int tileWidth = 512;
       int tileHeight = 512;

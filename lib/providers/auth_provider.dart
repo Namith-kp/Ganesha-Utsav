@@ -16,10 +16,12 @@ final authStateProvider = StreamProvider<auth.User?>((ref) {
 // FutureProvider that fetches the Collector profile based on the current auth state
 final collectorProfileProvider = FutureProvider<Collector?>((ref) async {
   final authUser = ref.watch(authStateProvider).value;
-  
+
   if (authUser != null) {
-    return await ref.watch(authServiceProvider).getCollectorProfile(authUser.uid);
+    return await ref
+        .watch(authServiceProvider)
+        .getCollectorProfile(authUser.uid);
   }
-  
+
   return null;
 });
