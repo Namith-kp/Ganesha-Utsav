@@ -7,6 +7,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'router/app_router.dart';
+import 'screens/update_screen.dart';
 
 // ─── Design Tokens (mirrors web-app/style.css) ────────────────────────────────
 class AppColors {
@@ -85,12 +86,14 @@ class MyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
-    return MaterialApp.router(
-      title: 'Ganesh Chanda Tracker',
-      debugShowCheckedModeBanner: false,
-      theme: _buildDarkTheme(),
-      themeMode: ThemeMode.dark,
-      routerConfig: router,
+    return UpdateWrapper(
+      child: MaterialApp.router(
+        title: 'Ganesh Chanda Tracker',
+        debugShowCheckedModeBanner: false,
+        theme: _buildDarkTheme(),
+        themeMode: ThemeMode.dark,
+        routerConfig: router,
+      ),
     );
   }
 

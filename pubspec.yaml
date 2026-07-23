@@ -65,6 +65,9 @@ dependencies:
   firebase_storage: ^13.3.0
   flutter_native_splash: ^2.4.8
   flutter_dotenv: ^6.0.1
+  package_info_plus: ^10.2.1
+  open_filex: ^4.7.0
+  dio: ^5.10.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

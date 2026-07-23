@@ -1,0 +1,70 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed for GitHub Releases
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Install Dependencies
+        run: flutter pub get
+        
+      - name: Build Web
+        run: flutter build web
+        
+      - name: Build APKs
+        # Building a universal APK so the in-app updater works on all architectures
+        run: flutter build apk --release --obfuscate --split-debug-info=build/app/outputs/symbols
+        
+      - name: Deploy Web to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          channelId: live
+          projectId: ganesha-funds-tracker
+
+      - name: Upload APK to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-GithubAction@v1
+        with:
+          appId: ${{ secrets.FIREBASE_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: testers
+          file: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Extract Version from pubspec.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2)
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body: "Automated build triggered by push to main."
+          files: build/app/outputs/flutter-apk/*.apk
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
