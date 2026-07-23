@@ -69,5 +69,3 @@ google-services.json
 
 # Environment Variables
 .env
-
-config.env
