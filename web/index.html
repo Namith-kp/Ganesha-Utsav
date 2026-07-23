@@ -74,6 +74,31 @@
       bottom: 0;
       right: 0;
     }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(250, 204, 21, 0.15); /* AppColors.accent with opacity */
+      border-radius: 50%;
+      border-top-color: #FACC15; /* AppColors.accent */
+      animation: spin 1s ease-in-out infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      color: #FACC15;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin-top: 16px;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      text-align: center;
+    }
   </style>
   <script id="splash-screen-script">
     function removeSplashFromWeb() {
@@ -85,6 +110,10 @@
   <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
 </head>
 <body>
+  <div id="splash" class="center">
+    <div class="spinner"></div>
+    <div class="loading-text">Loading...</div>
+  </div>
   <!-- This script installs service_worker.js to provide PWA functionality to
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
@@ -99,6 +128,9 @@
         return engineInitializer.initializeEngine();
       }).then(function(appRunner) {
         return appRunner.runApp();
+      }).then(function(app) {
+        // Remove the splash screen once the app starts
+        removeSplashFromWeb();
       });
     });
   </script>
