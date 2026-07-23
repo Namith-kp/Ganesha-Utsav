@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../main.dart';
 
@@ -211,6 +212,52 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 ),
+                
+                if (kIsWeb) ...[
+                  const SizedBox(height: 32),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.bgCard.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(LucideIcons.smartphone, color: AppColors.accent, size: 32),
+                        const SizedBox(height: 12),
+                        Text(
+                          'For the best experience, download our Android App',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final url = Uri.parse('https://github.com/Namith-kp/Ganesha-funds-tracker/releases/latest');
+                            if (await canLaunchUrl(url)) {
+                              await launchUrl(url);
+                            }
+                          },
+                          icon: const Icon(LucideIcons.download),
+                          label: const Text('Download App'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

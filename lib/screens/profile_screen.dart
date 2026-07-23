@@ -10,6 +10,7 @@ import '../models/unit.dart';
 import '../models/building.dart';
 import '../main.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -245,6 +246,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                           onTap: () {
                             context.push('/leaderboard');
+                          },
+                        ),
+                      ],
+                      if (kIsWeb) ...[
+                        const SizedBox(height: 16),
+                        ListTile(
+                          tileColor: AppColors.bgCard,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: const BorderSide(color: AppColors.border),
+                          ),
+                          leading: const Icon(
+                            LucideIcons.smartphone,
+                            color: AppColors.accent,
+                          ),
+                          title: Text(
+                            'Download Android App',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'For the best experience',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            LucideIcons.download,
+                            color: AppColors.textSecondary,
+                          ),
+                          onTap: () async {
+                            final url = Uri.parse('https://github.com/Namith-kp/Ganesha-funds-tracker/releases/latest');
+                            if (await canLaunchUrl(url)) {
+                              await launchUrl(url);
+                            }
                           },
                         ),
                       ],
