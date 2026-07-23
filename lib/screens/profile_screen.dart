@@ -20,7 +20,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  Future<List<Map<String, dynamic>>>? _myCollectionsFuture;
+  Stream<List<Map<String, dynamic>>>? _myCollectionsStream;
 
   @override
   void initState() {
@@ -31,9 +31,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void _loadData() {
     final profile = ref.read(collectorProfileProvider).value;
     if (profile != null && profile.role != 'viewer' && profile.id != 'web_guest') {
-      _myCollectionsFuture = ref
+      _myCollectionsStream = ref
           .read(buildingServiceProvider)
-          .getDetailedCollections(filterCollectorId: profile.id);
+          .streamDetailedCollections(filterCollectorId: profile.id);
     }
   }
 
@@ -357,10 +357,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildCollectedByYouSection() {
-    if (_myCollectionsFuture == null) return const SizedBox.shrink();
+    if (_myCollectionsStream == null) return const SizedBox.shrink();
 
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _myCollectionsFuture,
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _myCollectionsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(

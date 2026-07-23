@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:csv/csv.dart';
@@ -40,6 +41,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   List<dynamic>? _cachedCombinedCollections;
   List<dynamic>? _cachedCombinedSpendings;
   List<Collector>? _cachedCollectors;
+  List<Map<String, dynamic>>? _cachedCollectionsData;
+  List<Map<String, dynamic>>? _cachedAllCollectionsData;
+  List<Spending>? _cachedSpendingsData;
+
+  StreamSubscription? _collectionsSub;
+  StreamSubscription? _allCollectionsSub;
+  StreamSubscription? _spendingsSub;
+  StreamSubscription? _collectorsSub;
 
   TabController? _tabController;
   final ScrollController _collectionsScrollController = ScrollController();
@@ -86,6 +95,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   @override
   void dispose() {
+    _collectionsSub?.cancel();
+    _allCollectionsSub?.cancel();
+    _spendingsSub?.cancel();
+    _collectorsSub?.cancel();
     _tabController?.dispose();
     _collectionsScrollController.dispose();
     _searchController.dispose();
@@ -106,25 +119,64 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     _allCollectionsFuture = ref
         .read(buildingServiceProvider)
         .getDetailedCollections(filterCollectorId: null);
-    _collectorsFuture = AuthService().getAllCollectors().then((data) {
-      if (mounted) setState(() => _cachedCollectors = data);
-      return data;
+        
+    _collectorsSub?.cancel();
+    _collectorsSub = AuthService().streamAllCollectors().listen((data) {
+      if (mounted) {
+        _cachedCollectors = data;
+        _updateCombinedCollections();
+        _updateCombinedSpendings();
+      }
     });
-    _combinedCollectionsFuture =
-        Future.wait([_collectionsFuture!, _collectorsFuture!]).then((data) {
-          if (mounted) setState(() => _cachedCombinedCollections = data);
-          return data;
-        });
+
+    // Dummy future for _collectorsFuture just to keep the FutureBuilder happy 
+    // for other parts of the code if needed.
+    _collectorsFuture = Future.value([]);
+    
+    _collectionsSub?.cancel();
+    _collectionsSub = ref.read(buildingServiceProvider).streamDetailedCollections(filterCollectorId: filterId).listen((data) {
+      if (mounted) {
+        _cachedCollectionsData = data;
+        _updateCombinedCollections();
+      }
+    });
+
+    _allCollectionsSub?.cancel();
+    _allCollectionsSub = ref.read(buildingServiceProvider).streamDetailedCollections(filterCollectorId: null).listen((data) {
+      if (mounted) {
+        _cachedAllCollectionsData = data;
+        _updateCombinedSpendings();
+      }
+    });
+
     _spendingsFuture = ref.read(spendingServiceProvider).getSpendings();
-    _combinedSpendingsFuture =
-        Future.wait([
-          _spendingsFuture!,
-          _allCollectionsFuture!,
-          _collectorsFuture!,
-        ]).then((data) {
-          if (mounted) setState(() => _cachedCombinedSpendings = data);
-          return data;
-        });
+    
+    _spendingsSub?.cancel();
+    _spendingsSub = ref.read(spendingServiceProvider).streamSpendings().listen((data) {
+      if (mounted) {
+        _cachedSpendingsData = data;
+        _updateCombinedSpendings();
+      }
+    });
+
+    _combinedCollectionsFuture = Future.wait([_collectionsFuture!, _collectorsFuture!]);
+    _combinedSpendingsFuture = Future.wait([_spendingsFuture!, _allCollectionsFuture!, _collectorsFuture!]);
+  }
+
+  void _updateCombinedCollections() {
+    if (_cachedCollectionsData != null && _cachedCollectors != null) {
+      setState(() {
+        _cachedCombinedCollections = [_cachedCollectionsData!, _cachedCollectors!];
+      });
+    }
+  }
+
+  void _updateCombinedSpendings() {
+    if (_cachedSpendingsData != null && _cachedAllCollectionsData != null && _cachedCollectors != null) {
+      setState(() {
+        _cachedCombinedSpendings = [_cachedSpendingsData!, _cachedAllCollectionsData!, _cachedCollectors!];
+      });
+    }
   }
 
   Future<void> _confirmDeleteSpending(Spending spending) async {

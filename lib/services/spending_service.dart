@@ -10,23 +10,24 @@ class SpendingService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   Future<List<Spending>> getSpendings() async {
+    return _getSpendingsInternal(source: Source.server);
+  }
+
+  Stream<List<Spending>> streamSpendings() async* {
+    try {
+      final cached = await _getSpendingsInternal(source: Source.cache);
+      if (cached.isNotEmpty) yield cached;
+    } catch (_) {}
+    yield await _getSpendingsInternal(source: Source.server);
+  }
+
+  Future<List<Spending>> _getSpendingsInternal({required Source source}) async {
     try {
       final query = _db
           .collection('spendings')
           .orderBy('createdAt', descending: true);
       
-      QuerySnapshot snapshot;
-      try {
-        snapshot = await query.get(const GetOptions(source: Source.cache));
-        if (snapshot.docs.isNotEmpty) {
-          query.get(const GetOptions(source: Source.server)); // bg update
-        } else {
-          snapshot = await query.get();
-        }
-      } catch (_) {
-        snapshot = await query.get();
-      }
-
+      final snapshot = await query.get(GetOptions(source: source));
       return snapshot.docs.map((doc) => Spending.fromFirestore(doc)).toList();
     } catch (e) {
       print('Error fetching spendings: $e');

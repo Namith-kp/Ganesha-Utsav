@@ -48,7 +48,7 @@ jobs:
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
           token: ${{ secrets.FIREBASE_TOKEN }}
-          groups: testers
+          # groups: testers # Uncomment this ONLY after creating a group named "testers" in Firebase Console
           file: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Extract Version from pubspec.yaml

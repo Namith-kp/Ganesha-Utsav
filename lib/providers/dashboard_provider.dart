@@ -15,14 +15,15 @@ class DashboardData {
   });
 }
 
-final dashboardDataProvider = FutureProvider.autoDispose<DashboardData>((
+final dashboardDataProvider = StreamProvider.autoDispose<DashboardData>((
   ref,
-) async {
-  final collections = await ref
-      .read(buildingServiceProvider)
-      .getDetailedCollections(filterCollectorId: null);
+) async* {
+  final stream = ref
+      .watch(buildingServiceProvider)
+      .streamDetailedCollections(filterCollectorId: null);
 
-  double totalFunds = 0;
+  await for (final collections in stream) {
+    double totalFunds = 0;
 
   for (var item in collections) {
     if (item['isCorrection'] == true) continue;
@@ -60,9 +61,10 @@ final dashboardDataProvider = FutureProvider.autoDispose<DashboardData>((
     }),
   );
 
-  return DashboardData(
-    topDonations: sortedCollections,
-    sponsors: sponsors,
-    totalFunds: totalFunds,
-  );
+    yield DashboardData(
+      topDonations: sortedCollections,
+      sponsors: sponsors,
+      totalFunds: totalFunds,
+    );
+  }
 });

@@ -380,10 +380,30 @@ class BuildingService {
   Future<List<Map<String, dynamic>>> getFlattenedCollectionData({
     String? filterCollectorId,
   }) async {
-    final buildingsSnapshot = await _firestore.collection('buildings').get();
+    return _getFlattenedCollectionDataInternal(
+        filterCollectorId: filterCollectorId, source: Source.server);
+  }
+
+  Stream<List<Map<String, dynamic>>> streamFlattenedCollectionData({
+    String? filterCollectorId,
+  }) async* {
+    try {
+      final cached = await _getFlattenedCollectionDataInternal(
+          filterCollectorId: filterCollectorId, source: Source.cache);
+      if (cached.isNotEmpty) yield cached;
+    } catch (_) {}
+    yield await _getFlattenedCollectionDataInternal(
+        filterCollectorId: filterCollectorId, source: Source.server);
+  }
+
+  Future<List<Map<String, dynamic>>> _getFlattenedCollectionDataInternal({
+    String? filterCollectorId,
+    required Source source,
+  }) async {
+    final buildingsSnapshot = await _firestore.collection('buildings').get(GetOptions(source: source));
 
     // Fetch team funds
-    final collectorsSnapshot = await _firestore.collection('collectors').get();
+    final collectorsSnapshot = await _firestore.collection('collectors').get(GetOptions(source: source));
     final teamFundsData = <Map<String, dynamic>>[];
     for (var doc in collectorsSnapshot.docs) {
       final data = doc.data();
@@ -415,7 +435,7 @@ class BuildingService {
       final buildingName = buildingDoc.data()['name'] ?? 'Unknown Building';
       final unitsSnapshot = await buildingDoc.reference
           .collection('units')
-          .get();
+          .get(GetOptions(source: source));
 
       final List<Map<String, dynamic>> buildingData = [];
       for (final unitDoc in unitsSnapshot.docs) {
@@ -451,29 +471,42 @@ class BuildingService {
   Future<List<Map<String, dynamic>>> getDetailedCollections({
     String? filterCollectorId,
   }) async {
+    return _getDetailedCollectionsInternal(
+        filterCollectorId: filterCollectorId, source: Source.server);
+  }
+
+  Stream<List<Map<String, dynamic>>> streamDetailedCollections({
+    String? filterCollectorId,
+  }) async* {
+    try {
+      final cached = await _getDetailedCollectionsInternal(
+          filterCollectorId: filterCollectorId, source: Source.cache);
+      if (cached.isNotEmpty) yield cached;
+    } catch (_) {}
+    
+    // Always yield the server result
+    yield await _getDetailedCollectionsInternal(
+        filterCollectorId: filterCollectorId, source: Source.server);
+  }
+
+  Future<List<Map<String, dynamic>>> _getDetailedCollectionsInternal({
+    String? filterCollectorId,
+    required Source source,
+  }) async {
     QuerySnapshot? buildingsSnapshot;
     QuerySnapshot? correctionsSnapshot;
     QuerySnapshot? collectorsSnapshot;
     QuerySnapshot? allUnitsSnapshot;
 
     try {
-      buildingsSnapshot = await _firestore.collection('buildings').get();
+      buildingsSnapshot = await _firestore.collection('buildings').get(GetOptions(source: source));
     } catch (e) {
       print('Error fetching buildings: $e');
     }
     
     try {
       final query = _firestore.collectionGroup('units');
-      try {
-        allUnitsSnapshot = await query.get(const GetOptions(source: Source.cache));
-        if (allUnitsSnapshot.docs.isNotEmpty) {
-          query.get(const GetOptions(source: Source.server)); // bg update
-        } else {
-          allUnitsSnapshot = await query.get();
-        }
-      } catch (_) {
-        allUnitsSnapshot = await query.get();
-      }
+      allUnitsSnapshot = await query.get(GetOptions(source: source));
     } catch (e) {
       print('Error fetching all units: $e');
     }
@@ -482,13 +515,13 @@ class BuildingService {
       correctionsSnapshot = await _firestore
           .collection('corrections')
           .orderBy('timestamp', descending: true)
-          .get();
+          .get(GetOptions(source: source));
     } catch (e) {
       print('Error fetching corrections: $e');
     }
 
     try {
-      collectorsSnapshot = await _firestore.collection('collectors').get();
+      collectorsSnapshot = await _firestore.collection('collectors').get(GetOptions(source: source));
     } catch (e) {
       print('Error fetching collectors: $e');
     }
@@ -551,22 +584,6 @@ class BuildingService {
       buildingMap[bDoc.id] = Building.fromMap(bDoc.data() as Map<String, dynamic>, bDoc.id);
     }
     
-    try {
-      final query = _firestore.collectionGroup('units');
-      try {
-        allUnitsSnapshot = await query.get(const GetOptions(source: Source.cache));
-        if (allUnitsSnapshot.docs.isNotEmpty) {
-          query.get(const GetOptions(source: Source.server)); // bg update
-        } else {
-          allUnitsSnapshot = await query.get();
-        }
-      } catch (_) {
-        allUnitsSnapshot = await query.get();
-      }
-    } catch (e) {
-      print('Error fetching all units: $e');
-    }
-
     final collections = <Map<String, dynamic>>[];
     collections.addAll(teamFundsData);
 
@@ -683,14 +700,26 @@ class BuildingService {
 
   // Get pending/uncollected units
   Future<List<Map<String, dynamic>>> getPendingCollections() async {
-    final buildingsSnapshot = await _firestore.collection('buildings').get();
+    return _getPendingCollectionsInternal(source: Source.server);
+  }
+
+  Stream<List<Map<String, dynamic>>> streamPendingCollections() async* {
+    try {
+      final cached = await _getPendingCollectionsInternal(source: Source.cache);
+      if (cached.isNotEmpty) yield cached;
+    } catch (_) {}
+    yield await _getPendingCollectionsInternal(source: Source.server);
+  }
+
+  Future<List<Map<String, dynamic>>> _getPendingCollectionsInternal({required Source source}) async {
+    final buildingsSnapshot = await _firestore.collection('buildings').get(GetOptions(source: source));
 
     final buildingMap = <String, Building>{};
     for (var bDoc in buildingsSnapshot.docs) {
       buildingMap[bDoc.id] = Building.fromMap(bDoc.data(), bDoc.id);
     }
 
-    final unitsSnapshot = await _firestore.collectionGroup('units').get();
+    final unitsSnapshot = await _firestore.collectionGroup('units').get(GetOptions(source: source));
     
     final collections = <Map<String, dynamic>>[];
     for (final unitDoc in unitsSnapshot.docs) {

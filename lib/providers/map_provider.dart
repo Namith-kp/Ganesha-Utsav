@@ -61,12 +61,18 @@ final liveLocationProvider = StreamProvider<Position?>((ref) async* {
     return;
   }
 
-  // Yield current position first for quick UI load
-  yield await Geolocator.getCurrentPosition(
-    desiredAccuracy: LocationAccuracy.bestForNavigation,
-  );
+  // Try to yield last known position instantly for a quick map render
+  if (!kIsWeb) {
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        yield lastKnown;
+      }
+    } catch (_) {}
+  }
 
-  // Then yield continuous stream
+  // Then yield continuous stream which will eventually emit the precise live location
+
   yield* Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,

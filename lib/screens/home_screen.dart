@@ -39,6 +39,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String _selectedFilter = 'all';
   bool _hasZoomedToTarget = false;
   bool _hasCenteredOnUser = false;
+  bool _isLocating = true;
+  LatLng? _cachedCenter;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCachedLocation();
+  }
+
+  Future<void> _fetchCachedLocation() async {
+    if (widget.initialLat != null) {
+      if (mounted) setState(() => _isLocating = false);
+      return;
+    }
+    try {
+      final pos = await Geolocator.getLastKnownPosition();
+      if (pos != null && mounted) {
+        _cachedCenter = LatLng(pos.latitude, pos.longitude);
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isLocating = false;
+      });
+    }
+  }
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
     final latTween = Tween<double>(
@@ -159,10 +185,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
       body: Builder(
         builder: (context) {
+          if (_isLocating) {
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.accent),
+            );
+          }
+
           LatLng initialCenter = const LatLng(20.5937, 78.9629); // Center of India fallback
-          final buildings = buildingsAsync.value ?? [];
-          if (buildings.isNotEmpty) {
-            initialCenter = LatLng(buildings.first.lat, buildings.first.lng);
+          if (_cachedCenter != null) {
+            initialCenter = _cachedCenter!;
+          } else {
+            final buildings = buildingsAsync.value ?? [];
+            if (buildings.isNotEmpty) {
+              initialCenter = LatLng(buildings.first.lat, buildings.first.lng);
+            }
           }
 
           return Stack(
