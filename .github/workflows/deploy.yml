@@ -45,7 +45,7 @@ jobs:
           projectId: ganesha-funds-tracker
 
       - name: Upload APK to Firebase App Distribution
-        uses: wzieba/Firebase-Distribution-GithubAction@v1
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
