@@ -88,7 +88,7 @@ class MyApp extends ConsumerWidget {
 
     return UpdateWrapper(
       child: MaterialApp.router(
-        title: 'Ganesh Chanda Tracker',
+        title: 'Ganesha Utsava',
         debugShowCheckedModeBanner: false,
         theme: _buildDarkTheme(),
         themeMode: ThemeMode.dark,

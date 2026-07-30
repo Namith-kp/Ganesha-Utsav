@@ -79,6 +79,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -93,6 +94,7 @@ flutter:
 
   assets:
     - config.env
+    - assets/icon.png
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
@@ -126,3 +128,22 @@ flutter:
 dependency_overrides:
   flutter_google_street_view:
     path: ./flutter_google_street_view_patched
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon_adaptive_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#1E1E1E"
+    theme_color: "#FACC15"
+
+flutter_native_splash:
+  color: "#09090B"
+  image: "assets/icon_adaptive_foreground.png"
+  android_12:
+    color: "#09090B"
+    image: "assets/icon_adaptive_foreground.png"

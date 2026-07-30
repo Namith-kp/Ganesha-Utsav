@@ -286,7 +286,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(path)],
-          text: 'Ganesha Funds Collection Report',
+          text: 'Ganesha Utsava Collection Report',
         ),
       );
     } catch (e) {
@@ -1227,6 +1227,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                                       vertical: 6,
                                     ),
                                     child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(
                                           LucideIcons.users,

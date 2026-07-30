@@ -6,9 +6,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
-        android:label="ganeshtracker"
+        android:label="Ganesha Utsava"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/launcher_icon"
         android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"

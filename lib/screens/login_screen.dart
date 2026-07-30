@@ -94,10 +94,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      LucideIcons.map,
-                      size: 48,
-                      color: AppColors.accent,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(50),
+                      child: Image.asset(
+                        'assets/icon.png',
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                 ),
@@ -109,7 +111,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     colors: [AppColors.accent, AppColors.accentLight],
                   ).createShader(bounds),
                   child: Text(
-                    'Ganesha Funds Tracker',
+                    'Ganesha Utsava',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 32,
                       fontWeight: FontWeight.w800,

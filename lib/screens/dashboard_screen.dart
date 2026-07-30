@@ -41,7 +41,7 @@ class DashboardScreen extends ConsumerWidget {
                   colors: [AppColors.accent, AppColors.accentLight],
                 ).createShader(bounds),
                 child: Text(
-                  'Ganesha Funds Tracker',
+                  'Ganesha Utsava',
                   style: GoogleFonts.plusJakartaSans(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,

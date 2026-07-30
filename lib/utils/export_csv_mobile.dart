@@ -8,6 +8,6 @@ Future<void> exportCsv(String csvData) async {
   final file = File(path);
   await file.writeAsString(csvData);
   await SharePlus.instance.share(
-    ShareParams(files: [XFile(path)], text: 'Ganesha Funds Collection Report'),
+    ShareParams(files: [XFile(path)], text: 'Ganesha Utsava Collection Report'),
   );
 }
