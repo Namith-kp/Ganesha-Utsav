@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 class UpdateService {
   static const String repoOwner = 'Namith-kp';
-  static const String repoName = 'Ganesha-funds-tracker';
+  static const String repoName = 'Ganesha-Utsav';
 
   /// Checks if a new version is available on GitHub Releases
   /// Returns the download URL if an update is available, null otherwise.
