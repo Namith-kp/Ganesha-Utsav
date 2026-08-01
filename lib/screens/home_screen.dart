@@ -46,6 +46,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       setState(() => _isPickingLocation = active);
       HomeScreenAddTagNotifier.setPicking(active);
     }
+    // When entering picking mode, snap the map to the user's live location
+    // so the center pin starts right on top of where they are standing.
+    if (active) {
+      final pos = ref.read(liveLocationProvider).value;
+      if (pos != null) {
+        final currentZoom = _mapController.camera.zoom;
+        _animatedMapMove(
+          LatLng(pos.latitude, pos.longitude),
+          currentZoom < 18.0 ? 18.0 : currentZoom,
+        );
+      }
+    }
   }
 
   @override
@@ -643,44 +655,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         pinColor = Colors.orange;
       }
 
+      final bool hasFraction = building.collectedCount > 0 &&
+          building.collectedCount < building.totalUnits;
+
       return Marker(
         point: LatLng(building.lat, building.lng),
         width: 72,
         height: 72,
+        // Center alignment: the dot center is pinned to the coordinate.
+        // The fraction label floats above via a Positioned widget and
+        // does NOT affect the anchor point, preventing zoom drift.
+        alignment: Alignment.center,
         child: GestureDetector(
           onTap: () {
             _animatedMapMove(LatLng(building.lat, building.lng), 19.5);
             showCollectionBottomSheet(context, ref, building);
           },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
-              if (building.collectedCount > 0 &&
-                  building.collectedCount < building.totalUnits)
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 56),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppColors.borderLight),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black54, blurRadius: 4),
-                    ],
-                  ),
-                  child: Text(
-                    '${building.collectedCount}/${building.totalUnits}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 3),
+              // The dot — always at the exact coordinate (center of Stack).
               Container(
                 width: 16,
                 height: 16,
@@ -693,6 +688,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
+              // Fraction label floats above the dot without shifting the anchor.
+              if (hasFraction)
+                Positioned(
+                  bottom: 20, // sits above the 16 px dot
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 56),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppColors.borderLight),
+                      boxShadow: [
+                        const BoxShadow(color: Colors.black54, blurRadius: 4),
+                      ],
+                    ),
+                    child: Text(
+                      '${building.collectedCount}/${building.totalUnits}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -747,6 +770,7 @@ class _LiveLocationMarkerLayer extends ConsumerWidget {
                   point: LatLng(pos.latitude, pos.longitude),
                   width: 32,
                   height: 32,
+                  alignment: Alignment.center,
                   child: Container(
                     decoration: BoxDecoration(
                       color: AppColors.accent,
