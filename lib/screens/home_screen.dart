@@ -1,21 +1,18 @@
-import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../providers/auth_provider.dart';
 import '../providers/map_provider.dart';
 import '../models/building.dart';
-import '../models/unit.dart';
 import '../main.dart';
 import 'street_view_screen.dart';
-
 import '../utils/building_dialogs.dart';
+import '../utils/add_tag_notifier.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final double? initialLat;
@@ -41,11 +38,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _hasCenteredOnUser = false;
   bool _isLocating = true;
   LatLng? _cachedCenter;
+  bool _isPickingLocation = false;
+  StreamSubscription<void>? _addTagSub;
+
+  void _setPickingLocation(bool active) {
+    if (_isPickingLocation != active) {
+      setState(() => _isPickingLocation = active);
+      HomeScreenAddTagNotifier.setPicking(active);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _fetchCachedLocation();
+    _addTagSub = HomeScreenAddTagNotifier.stream.listen((_) {
+      if (mounted) _setPickingLocation(true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _addTagSub?.cancel();
+    HomeScreenAddTagNotifier.setPicking(false);
+    super.dispose();
   }
 
   Future<void> _fetchCachedLocation() async {
@@ -108,7 +124,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final authService = ref.read(authServiceProvider);
     final buildingsAsync = ref.watch(buildingsProvider);
     final collectorAsync = ref.watch(collectorProfileProvider);
     final profile = collectorAsync.value;
@@ -157,31 +172,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           // Nav bar handles other screens now
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'myLocationBtn',
-            backgroundColor: AppColors.bgCard,
-            foregroundColor: AppColors.textPrimary,
-            onPressed: () {
-              final pos = ref.read(liveLocationProvider).value;
-              if (pos != null) {
-                double targetZoom = _mapController.camera.zoom;
-                if (targetZoom < 18.0) {
-                  targetZoom = 18.0;
-                } else if (targetZoom < 19.0) {
-                  targetZoom += 0.5;
-                }
-                _animatedMapMove(
-                  LatLng(pos.latitude, pos.longitude),
-                  targetZoom,
-                );
-              }
-            },
-            child: const Icon(LucideIcons.navigation),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'myLocationBtn',
+        backgroundColor: AppColors.bgCard,
+        foregroundColor: AppColors.textPrimary,
+        onPressed: () {
+          final pos = ref.read(liveLocationProvider).value;
+          if (pos != null) {
+            double targetZoom = _mapController.camera.zoom;
+            if (targetZoom < 18.0) {
+              targetZoom = 18.0;
+            } else if (targetZoom < 19.0) {
+              targetZoom += 0.5;
+            }
+            _animatedMapMove(
+              LatLng(pos.latitude, pos.longitude),
+              targetZoom,
+            );
+          }
+        },
+        child: const Icon(LucideIcons.navigation),
       ),
       body: Builder(
         builder: (context) {
@@ -235,6 +245,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     }
                   },
                   onTap: (tapPosition, point) {
+                    // In pick mode, taps are ignored — user uses the Confirm button.
+                    if (_isPickingLocation) return;
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => StreetViewScreen(
@@ -300,6 +312,264 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ),
                 ),
               ),
+              // ── Uber-style pick-location overlay ──────────────────────────
+              if (_isPickingLocation) ...[
+                // Top instruction banner
+                Positioned(
+                  top: 60,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                        boxShadow: const [
+                          BoxShadow(blurRadius: 12, color: Colors.black54),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.touch_app_rounded,
+                            color: AppColors.accent,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            HomeScreenAddTagNotifier.pendingData != null
+                                ? 'Position pin for "${HomeScreenAddTagNotifier.pendingData!.name}"'
+                                : 'Drag the map to position the pin',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Fixed center pin (Uber-style)
+                // The pin tip (bottom of stem) must sit at screen center so
+                // camera.center returns the precise coordinate the user aimed at.
+                //
+                // Layout math:
+                //   head   = 44 px
+                //   stem   = 14 px  → tip at 58 px from column top
+                //   shadow =  5 px
+                //   total  = 63 px  → column center at 31.5 px from top
+                //   tip below column center = 58 - 31.5 = 26.5 px
+                //   → shift the whole widget UP by 26 px so the tip lands at
+                //     screen center (= camera.center).
+                IgnorePointer(
+                  child: Center(
+                    child: Transform.translate(
+                      // Move rendered widget up; layout box stays at center.
+                      offset: const Offset(0, -26),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Pin head
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: AppColors.accent,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      AppColors.accent.withValues(alpha: 0.45),
+                                  blurRadius: 16,
+                                  spreadRadius: 4,
+                                ),
+                                const BoxShadow(
+                                  color: Colors.black54,
+                                  blurRadius: 8,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.add_location_alt_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          // Pin stem
+                          Container(
+                            width: 3,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: AppColors.accent,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          // Ground shadow dot — its top edge is the precise point
+                          Container(
+                            width: 10,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.black38,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Bottom action bar: Cancel + Confirm
+                Positioned(
+                  bottom: 24,
+                  left: 16,
+                  right: 16,
+                  child: Row(
+                    children: [
+                      // Cancel
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _setPickingLocation(false),
+                          icon: const Icon(LucideIcons.x, size: 16),
+                          label: Text(
+                            'Cancel',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textPrimary,
+                            side: const BorderSide(color: AppColors.border),
+                            backgroundColor: AppColors.bgCard,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Confirm
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.accent, AppColors.accentLight],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accent.withValues(alpha: 0.4),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final pickedPoint = _mapController.camera.center;
+                              final pending = HomeScreenAddTagNotifier.pendingData;
+                              HomeScreenAddTagNotifier.cancelPicking();
+                              _setPickingLocation(false);
+
+                              if (pending != null) {
+                                final authUser =
+                                    ref.read(authStateProvider).value;
+                                if (authUser == null) return;
+                                final buildingService =
+                                    ref.read(buildingServiceProvider);
+
+                                try {
+                                  if (pending.isApartment) {
+                                    await buildingService
+                                        .createMultiUnitBuilding(
+                                      lat: pickedPoint.latitude,
+                                      lng: pickedPoint.longitude,
+                                      name: pending.name,
+                                      unitLabels: List.generate(
+                                        pending.unitsCount,
+                                        (i) => 'House ${i + 1}',
+                                      ),
+                                      createdBy: authUser.uid,
+                                    );
+                                  } else {
+                                    await buildingService
+                                        .createSingleUnitBuilding(
+                                      lat: pickedPoint.latitude,
+                                      lng: pickedPoint.longitude,
+                                      name: pending.name,
+                                      type: 'house',
+                                      createdBy: authUser.uid,
+                                    );
+                                  }
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Added "${pending.name}" at location!',
+                                        ),
+                                        backgroundColor: AppColors.green,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error adding tag: $e'),
+                                        backgroundColor: AppColors.crimson,
+                                      ),
+                                    );
+                                  }
+                                }
+                              } else {
+                                showCreateBuildingDialog(
+                                  context,
+                                  ref,
+                                  pickedPoint,
+                                );
+                              }
+                            },
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            label: Text(
+                              'Confirm Location',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           );
         },
@@ -320,7 +590,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
       selected: isSelected,
       selectedColor: color,
-      backgroundColor: AppColors.bgCard.withOpacity(0.9),
+      backgroundColor: AppColors.bgCard.withValues(alpha: 0.9),
       checkmarkColor: Colors.white,
       showCheckmark: false,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

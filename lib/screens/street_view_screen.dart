@@ -71,6 +71,12 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
   void _navigateToNeighbor(String nextId) {
     if (_isTransitioning) return;
 
+    // Pre-warm next image immediately in memory cache
+    precacheImage(
+      CachedNetworkImageProvider('$baseUrl/$nextId.webp'),
+      context,
+    ).catchError((_) {});
+
     // Maintain geographic viewing direction across transitions
     final currentId = ref.read(currentPanoramaIdProvider);
     if (currentId != null) {
@@ -97,11 +103,10 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
       _isTransitioning = true;
     });
 
-    // Wait for a short duration for the fade transition to happen
-    Future.delayed(const Duration(milliseconds: 600), () {
+    // Fast transition delay (200ms) for snappy, near-instant feel
+    Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) {
         setState(() {
-          // The background image is now fully visible, make it the foreground
           _foregroundId = nextId;
           _backgroundId = null;
           _isTransitioning = false;
@@ -473,8 +478,8 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch this to trigger the prefetching logic silently
-    ref.watch(prefetchControllerProvider);
+    // Watch this to trigger the prefetching logic silently with BuildContext
+    ref.watch(prefetchControllerProvider(context));
 
     final currentId = ref.watch(currentPanoramaIdProvider);
     final currentNode = currentId != null
@@ -588,7 +593,7 @@ class _StreetViewScreenState extends ConsumerState<StreetViewScreen> {
           // Foreground Layer (fades out during transition)
           AnimatedOpacity(
             opacity: _isTransitioning ? 0.0 : 1.0,
-            duration: const Duration(milliseconds: 500),
+            duration: const Duration(milliseconds: 150),
             child: PanoramaViewer(
               key: ValueKey(_foregroundId),
               longitude: _initialLongitude,

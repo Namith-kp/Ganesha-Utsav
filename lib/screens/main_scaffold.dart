@@ -5,6 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/auth_provider.dart';
 import '../main.dart';
+import '../utils/add_tag_notifier.dart';
+import '../utils/building_dialogs.dart';
 
 class MainScaffold extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
@@ -98,7 +100,7 @@ class MainScaffold extends ConsumerWidget {
               children: [
                 NavigationRail(
                   backgroundColor: AppColors.bgCard,
-                  indicatorColor: AppColors.accent.withOpacity(0.2),
+                  indicatorColor: AppColors.accent.withValues(alpha: 0.2),
                   selectedIndex: currentIndex,
                   onDestinationSelected: (index) {
                     context.go(items[index].route);
@@ -143,55 +145,136 @@ class MainScaffold extends ConsumerWidget {
         // Mobile Layout
         return Scaffold(
           body: navigationShell,
-          bottomNavigationBar: Container(
-            decoration: const BoxDecoration(
-              border: Border(
-                top: BorderSide(color: AppColors.border, width: 1),
+          bottomNavigationBar: _buildBottomNav(
+            context,
+            ref,
+            items,
+            currentIndex,
+            profile.canCreate,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomNav(
+    BuildContext context,
+    WidgetRef ref,
+    List<_NavItem> items,
+    int currentIndex,
+    bool canCreate,
+  ) {
+    // Split items around center button if canCreate
+    final leftItems = canCreate
+        ? items.sublist(0, (items.length / 2).floor())
+        : items;
+    final rightItems = canCreate
+        ? items.sublist((items.length / 2).floor())
+        : <_NavItem>[];
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: HomeScreenAddTagNotifier.isPickingLocation,
+      builder: (context, rawIsPicking, child) {
+        // Location picking active state is only active when currently on /map
+        final isPicking = rawIsPicking && location == '/map';
+
+        Widget buildNavItem(_NavItem item, int index) {
+          final isSelected = !isPicking && items.indexOf(item) == currentIndex;
+          return Expanded(
+            child: InkWell(
+              onTap: () {
+                HomeScreenAddTagNotifier.cancelPicking();
+                context.go(item.route);
+              },
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    item.icon,
+                    size: 24,
+                    color: isSelected ? AppColors.accent : AppColors.textSecondary,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color:
+                          isSelected ? AppColors.accent : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: NavigationBarTheme(
-              data: NavigationBarThemeData(
-                labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.selected)) {
-                    return GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.accent,
-                    );
-                  }
-                  return GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  );
-                }),
-                iconTheme: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.selected)) {
-                    return const IconThemeData(
-                      color: AppColors.accent,
-                      size: 24,
-                    );
-                  }
-                  return const IconThemeData(
-                    color: AppColors.textSecondary,
-                    size: 24,
-                  );
-                }),
-              ),
-              child: NavigationBar(
-                backgroundColor: AppColors.bgCard,
-                indicatorColor: AppColors.accent.withOpacity(0.2),
-                selectedIndex: currentIndex,
-                onDestinationSelected: (index) {
-                  context.go(items[index].route);
-                },
-                destinations: items.map((item) {
-                  return NavigationDestination(
-                    icon: Icon(item.icon),
-                    label: item.label,
-                  );
-                }).toList(),
-              ),
+          );
+        }
+
+        final isAddTagSelected = isPicking;
+
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppColors.bgCard,
+            border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 64,
+              child: canCreate
+                  ? Row(
+                      children: [
+                        ...leftItems.map(
+                          (item) => buildNavItem(item, items.indexOf(item)),
+                        ),
+                        // Center Add Tag button
+                        Expanded(
+                          child: InkWell(
+                            onTap: () {
+                              showAddTagDetailsDialog(context, ref);
+                            },
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  isAddTagSelected
+                                      ? Icons.add_location_alt_rounded
+                                      : Icons.add_location_alt_outlined,
+                                  size: 24,
+                                  color: isAddTagSelected
+                                      ? AppColors.accent
+                                      : AppColors.textSecondary,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Add Tag',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: isAddTagSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                    color: isAddTagSelected
+                                        ? AppColors.accent
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        ...rightItems.map(
+                          (item) => buildNavItem(item, items.indexOf(item)),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: items
+                          .map(
+                            (item) => buildNavItem(item, items.indexOf(item)),
+                          )
+                          .toList(),
+                    ),
             ),
           ),
         );

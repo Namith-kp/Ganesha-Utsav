@@ -45,6 +45,10 @@ class AppColors {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Expand image cache so high-res street view panoramas load instantly
+  PaintingBinding.instance.imageCache.maximumSize = 100;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 300 * 1024 * 1024; // 300 MB
+
   // Force portrait mode
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

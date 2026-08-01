@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/street_view_node.dart';
 
 const String baseUrl = 'https://pub-2e6c9cb2a1eb4eb98c8bae3105ebf165.r2.dev';
@@ -64,24 +66,44 @@ final currentPanoramaIdProvider =
       CurrentPanoramaIdNotifier.new,
     );
 
-// A listener provider that handles the predictive pre-fetching
-final prefetchControllerProvider = Provider<void>((ref) {
+// A listener provider that handles predictive pre-fetching for instant image switching
+final prefetchControllerProvider = Provider.family<void, BuildContext?>((ref, context) {
   final currentId = ref.watch(currentPanoramaIdProvider);
   if (currentId == null) return;
 
   final currentNode = ref.read(nodeByIdProvider(currentId));
   if (currentNode == null) return;
 
-  // CacheManager uses sqflite/path_provider and does not support web out of the box
-  if (kIsWeb) return;
+  void prefetchUrl(String id) {
+    final imgUrl = '$baseUrl/$id.webp';
+    final provider = CachedNetworkImageProvider(imgUrl);
 
-  // Prefetch the current node just in case
-  DefaultCacheManager().downloadFile('$baseUrl/$currentId.webp');
+    // Warm Flutter's in-memory texture/ImageCache (works on both Web & Native)
+    if (context != null) {
+      precacheImage(provider, context).catchError((_) {});
+    }
 
-  // Silently pre-fetch all neighboring images into cache
+    // Disk cache on native
+    if (!kIsWeb) {
+      DefaultCacheManager().downloadFile(imgUrl);
+    }
+  }
+
+  // 1. Prefetch current node
+  prefetchUrl(currentId);
+
+  // 2. Prefetch all immediate 1-hop neighbors
   for (final neighborId in currentNode.neighbors) {
-    final neighborUrl = '$baseUrl/$neighborId.webp';
-    // Using DefaultCacheManager to download and cache the file without blocking UI
-    DefaultCacheManager().downloadFile(neighborUrl);
+    prefetchUrl(neighborId);
+
+    // 3. Prefetch 2-hop neighbors for ultra-fast continuous street walking
+    final neighborNode = ref.read(nodeByIdProvider(neighborId));
+    if (neighborNode != null) {
+      for (final hop2Id in neighborNode.neighbors) {
+        if (hop2Id != currentId) {
+          prefetchUrl(hop2Id);
+        }
+      }
+    }
   }
 });
