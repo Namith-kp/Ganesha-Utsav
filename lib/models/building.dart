@@ -8,6 +8,7 @@ class Building {
   final String type; // "house", "shop", "apartment"
   final int totalUnits;
   final int collectedCount;
+  final int pendingPaymentCount;
   final double totalCollected;
   final String createdBy;
   final DateTime createdAt;
@@ -21,6 +22,7 @@ class Building {
     required this.type,
     required this.totalUnits,
     required this.collectedCount,
+    required this.pendingPaymentCount,
     required this.totalCollected,
     required this.createdBy,
     required this.createdAt,
@@ -36,6 +38,7 @@ class Building {
       type: map['type'] as String? ?? 'house',
       totalUnits: map['totalUnits'] as int? ?? 1,
       collectedCount: map['collectedCount'] as int? ?? 0,
+      pendingPaymentCount: map['pendingPaymentCount'] as int? ?? 0,
       totalCollected: (map['totalCollected'] as num?)?.toDouble() ?? 0.0,
       createdBy: map['createdBy'] as String? ?? '',
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -51,6 +54,7 @@ class Building {
       'type': type,
       'totalUnits': totalUnits,
       'collectedCount': collectedCount,
+      'pendingPaymentCount': pendingPaymentCount,
       'totalCollected': totalCollected,
       'createdBy': createdBy,
       'createdAt': Timestamp.fromDate(createdAt),

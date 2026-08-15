@@ -479,95 +479,97 @@ Future<void> showCollectionBottomSheet(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (isAdmin)
-                        IconButton(
-                          icon: const Icon(
-                            LucideIcons.plusCircle,
-                            color: AppColors.accent,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (isAdmin)
+                          IconButton(
+                            icon: const Icon(
+                              LucideIcons.plusCircle,
+                              color: AppColors.accent,
+                            ),
+                            tooltip: 'Add Unit',
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _showAddUnitDialog(context, ref, building);
+                            },
                           ),
-                          tooltip: 'Add Unit',
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _showAddUnitDialog(context, ref, building);
-                          },
-                        ),
-                      if (isAdmin)
-                        IconButton(
-                          icon: const Icon(
-                            LucideIcons.trash2,
-                            color: AppColors.crimson,
+                        if (isAdmin)
+                          IconButton(
+                            icon: const Icon(
+                              LucideIcons.trash2,
+                              color: AppColors.crimson,
+                            ),
+                            tooltip: 'Delete Building',
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx2) => AlertDialog(
+                                  backgroundColor: AppColors.bgCard,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: BorderSide(
+                                      color: AppColors.borderLight,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    'Delete Building?',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  content: Text(
+                                    'This will delete the building and all its units forever.',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx2, false),
+                                      child: Text(
+                                        'CANCEL',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.crimson,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      onPressed: () => Navigator.pop(ctx2, true),
+                                      child: Text(
+                                        'DELETE',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                await buildingService.deleteBuilding(building.id);
+                                if (context.mounted) Navigator.pop(context);
+                              }
+                            },
                           ),
-                          tooltip: 'Delete Building',
-                          onPressed: () async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx2) => AlertDialog(
-                                backgroundColor: AppColors.bgCard,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  side: BorderSide(
-                                    color: AppColors.borderLight,
-                                  ),
-                                ),
-                                title: Text(
-                                  'Delete Building?',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                content: Text(
-                                  'This will delete the building and all its units forever.',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx2, false),
-                                    child: Text(
-                                      'CANCEL',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.crimson,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                    onPressed: () => Navigator.pop(ctx2, true),
-                                    child: Text(
-                                      'DELETE',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirm == true) {
-                              await buildingService.deleteBuilding(building.id);
-                              if (context.mounted) Navigator.pop(context);
-                            }
-                          },
-                        ),
-                    ],
-                  ),
-                  if (canCreate || unit.status == 'collected')
-                    _AmountFormWidget(building: building, unit: unit),
-                ],
+                      ],
+                    ),
+                    if (canCreate || unit.status == 'collected')
+                      _AmountFormWidget(building: building, unit: unit),
+                  ],
+                ),
               ),
             );
           }
@@ -630,14 +632,24 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
   bool isSubmitting = false;
   String? photoBase64;
   String? paymentMethod;
+  String? currentPaymentStatus;
 
   @override
   void initState() {
     super.initState();
     final isAlreadyCollected = widget.unit.status == 'collected';
+    final hasPendingData = widget.unit.status == 'pending' && (widget.unit.amount > 0 || widget.unit.photoBase64 != null);
+    
     amountController = TextEditingController(
-      text: isAlreadyCollected ? widget.unit.amount.toString() : '',
+      text: (isAlreadyCollected || hasPendingData) ? (widget.unit.amount > 0 ? widget.unit.amount.toString() : '') : '',
     );
+    if (isAlreadyCollected) {
+      currentPaymentStatus = 'Paid';
+    } else if (hasPendingData) {
+      currentPaymentStatus = 'Pending';
+    } else {
+      currentPaymentStatus = null;
+    }
     donationItemController = TextEditingController(
       text: widget.unit.donationItem ?? '',
     );
@@ -668,6 +680,7 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
 
   bool get _isSubmitValid {
     if (isSubmitting || photoBase64 == null) return false;
+    if (currentPaymentStatus == null) return false;
     final amount = double.tryParse(amountController.text) ?? 0.0;
     final donation = donationItemController.text.trim();
 
@@ -1741,6 +1754,73 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
               ],
             ),
             const SizedBox(height: 12),
+            // Payment Status Selection
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => currentPaymentStatus = 'Paid'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: currentPaymentStatus == 'Paid'
+                            ? AppColors.greenPin.withValues(alpha: 0.2)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: currentPaymentStatus == 'Paid'
+                              ? AppColors.greenPin
+                              : AppColors.borderLight.withValues(alpha: 0.5),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Paid',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: currentPaymentStatus == 'Paid'
+                                ? AppColors.greenPin
+                                : AppColors.textSecondary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => currentPaymentStatus = 'Pending'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: currentPaymentStatus == 'Pending'
+                            ? AppColors.amber.withValues(alpha: 0.2)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: currentPaymentStatus == 'Pending'
+                              ? AppColors.amber
+                              : AppColors.borderLight.withValues(alpha: 0.5),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Pending',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: currentPaymentStatus == 'Pending'
+                                ? AppColors.amber
+                                : AppColors.textSecondary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: phoneController,
               keyboardType: TextInputType.phone,
@@ -1865,6 +1945,16 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                               unitId: widget.unit.id,
                               previousAmount: widget.unit.amount,
                             );
+                          } else if (currentPaymentStatus == 'Pending') {
+                            await buildingService.saveUnitPendingDetails(
+                              buildingId: widget.building.id,
+                              unitId: widget.unit.id,
+                              amount: amount,
+                              photoBase64: photoBase64,
+                              paymentMethod: paymentMethod ?? 'Donation',
+                              donationItem: donation,
+                              phoneNumber: phone,
+                            );
                           } else {
                             await buildingService.markUnitCollected(
                               buildingId: widget.building.id,
@@ -1906,7 +1996,11 @@ class _AmountFormWidgetState extends ConsumerState<_AmountFormWidget> {
                         ),
                       )
                     : Text(
-                        isAlreadyCollected ? 'UPDATE AMOUNT' : 'MARK COLLECTED',
+                        isAlreadyCollected 
+                            ? 'UPDATE AMOUNT' 
+                            : (currentPaymentStatus == 'Pending' 
+                                ? 'SAVE DETAILS' 
+                                : (currentPaymentStatus == 'Paid' ? 'MARK COLLECTED' : 'SELECT STATUS')),
                         style: GoogleFonts.plusJakartaSans(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,

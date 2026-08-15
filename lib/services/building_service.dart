@@ -82,6 +82,7 @@ class BuildingService {
       type: type,
       totalUnits: 1,
       collectedCount: 0,
+      pendingPaymentCount: 0,
       totalCollected: 0.0,
       createdBy: createdBy,
       createdAt: DateTime.now(),
@@ -123,6 +124,7 @@ class BuildingService {
       type: 'apartment',
       totalUnits: unitLabels.length,
       collectedCount: 0,
+      pendingPaymentCount: 0,
       totalCollected: 0.0,
       createdBy: createdBy,
       createdAt: DateTime.now(),
@@ -332,8 +334,12 @@ class BuildingService {
         batch.update(unitRef, unitUpdate);
       } else {
         // First time collection
+        final bool hadPendingDetails = !wasCollected &&
+            ((unitData['amount'] as num?)?.toDouble() ?? 0.0) > 0;
+
         batch.update(buildingRef, {
           'collectedCount': FieldValue.increment(1),
+          if (hadPendingDetails) 'pendingPaymentCount': FieldValue.increment(-1),
           'totalCollected': FieldValue.increment(amount),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -363,6 +369,56 @@ class BuildingService {
 
       await batch.commit();
     }
+  }
+
+  Future<void> saveUnitPendingDetails({
+    required String buildingId,
+    required String unitId,
+    required double amount,
+    String? photoBase64,
+    required String paymentMethod,
+    String? donationItem,
+    String? phoneNumber,
+  }) async {
+    final batch = _firestore.batch();
+    final buildingRef = _firestore.collection('buildings').doc(buildingId);
+    final unitRef = buildingRef.collection('units').doc(unitId);
+
+    final unitDoc = await unitRef.get();
+    final bool wasPendingWithDetails = unitDoc.exists &&
+        ((unitDoc.data()?['amount'] as num?)?.toDouble() ?? 0.0) > 0;
+
+    if (!wasPendingWithDetails) {
+      batch.update(buildingRef, {
+        'pendingPaymentCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    final normalizedPhone = phoneNumber == null
+        ? null
+        : _normalizePhoneNumber(phoneNumber);
+    final Map<String, dynamic> phoneFields = {};
+    if (phoneNumber != null) {
+      phoneFields['phoneNumber'] = phoneNumber.isNotEmpty
+          ? phoneNumber
+          : FieldValue.delete();
+      phoneFields['phoneNumberNormalized'] = normalizedPhone!.isNotEmpty
+          ? normalizedPhone
+          : FieldValue.delete();
+    }
+
+    batch.update(unitRef, {
+      'amount': amount,
+      'paymentMethod': paymentMethod,
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (photoBase64 != null) 'photoBase64': photoBase64,
+      if (donationItem != null && donationItem.isNotEmpty)
+        'donationItem': donationItem,
+      ...phoneFields,
+    });
+
+    await batch.commit();
   }
 
   // Stream corrections log
@@ -556,6 +612,7 @@ class BuildingService {
               type: 'team_funds',
               totalUnits: 1,
               collectedCount: 1,
+              pendingPaymentCount: 0,
               totalCollected: (data['fundAmount'] as num?)?.toDouble() ?? 0.0,
               createdBy: 'system',
               createdAt: DateTime.now(),
@@ -653,6 +710,7 @@ class BuildingService {
               type: 'house',
               totalUnits: 1,
               collectedCount: 1,
+              pendingPaymentCount: 0,
               totalCollected: newAmount,
               createdBy: 'system',
               createdAt: DateTime.now(),

@@ -631,16 +631,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (widget.targetBuildingId != null) {
         return building.id == widget.targetBuildingId;
       }
-      if (!canSeeAllTags && building.collectedCount == 0) return false;
+      if (!canSeeAllTags && building.collectedCount == 0 && building.pendingPaymentCount == 0) return false;
 
       if (_selectedFilter == 'all') return true;
-      if (_selectedFilter == 'red' && building.collectedCount == 0) return true;
+      if (_selectedFilter == 'red' && building.collectedCount == 0 && building.pendingPaymentCount == 0) return true;
       if (_selectedFilter == 'green' &&
           building.collectedCount >= building.totalUnits)
         return true;
       if (_selectedFilter == 'orange' &&
-          building.collectedCount > 0 &&
-          building.collectedCount < building.totalUnits)
+          ((building.collectedCount > 0 &&
+            building.collectedCount < building.totalUnits) ||
+           (building.pendingPaymentCount > 0 &&
+            building.collectedCount < building.totalUnits)))
         return true;
       return false;
     }).toList();
@@ -648,14 +650,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return filteredBuildings.map((building) {
       Color pinColor;
       if (building.collectedCount == 0) {
-        pinColor = Colors.red;
+        if (building.pendingPaymentCount > 0) {
+          pinColor = Colors.orange;
+        } else {
+          pinColor = Colors.red;
+        }
       } else if (building.collectedCount >= building.totalUnits) {
         pinColor = Colors.green;
       } else {
         pinColor = Colors.orange;
       }
 
-      final bool hasFraction = building.collectedCount > 0 &&
+      final bool hasFraction = building.totalUnits > 1 &&
+          (building.collectedCount > 0 || building.pendingPaymentCount > 0) &&
           building.collectedCount < building.totalUnits;
 
       return Marker(
@@ -688,10 +695,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
-              // Fraction label floats above the dot without shifting the anchor.
+              // Fraction label: shifted 22 px above Stack center via
+              // Transform.translate so it never overlaps the dot.
               if (hasFraction)
-                Positioned(
-                  bottom: 20, // sits above the 16 px dot
+                Transform.translate(
+                  offset: const Offset(0, -22),
                   child: Container(
                     constraints: const BoxConstraints(maxWidth: 56),
                     padding: const EdgeInsets.symmetric(
