@@ -21,6 +21,7 @@ import 'collector_report_screen.dart';
 import '../models/spending.dart';
 import '../services/spending_service.dart';
 import '../utils/spending_dialogs.dart';
+import 'pending_collections_screen.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -49,6 +50,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   StreamSubscription? _allCollectionsSub;
   StreamSubscription? _spendingsSub;
   StreamSubscription? _collectorsSub;
+  StreamSubscription? _pendingCollectionsSub;
+  double _totalPendingAmount = 0.0;
 
   TabController? _tabController;
   final ScrollController _collectionsScrollController = ScrollController();
@@ -99,6 +102,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     _allCollectionsSub?.cancel();
     _spendingsSub?.cancel();
     _collectorsSub?.cancel();
+    _pendingCollectionsSub?.cancel();
     _tabController?.dispose();
     _collectionsScrollController.dispose();
     _searchController.dispose();
@@ -161,6 +165,20 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
     _combinedCollectionsFuture = Future.wait([_collectionsFuture!, _collectorsFuture!]);
     _combinedSpendingsFuture = Future.wait([_spendingsFuture!, _allCollectionsFuture!, _collectorsFuture!]);
+
+    _pendingCollectionsSub?.cancel();
+    _pendingCollectionsSub = ref.read(buildingServiceProvider).streamPendingCollections().listen((data) {
+      if (mounted) {
+        double pendingSum = 0.0;
+        for (var item in data) {
+          final Unit unit = item['unit'];
+          pendingSum += unit.amount;
+        }
+        setState(() {
+          _totalPendingAmount = pendingSum;
+        });
+      }
+    });
   }
 
   void _updateCombinedCollections() {
@@ -380,7 +398,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     if (index == teamFundsIndex && isAdmin) {
       // Team Funds Tab
       return FloatingActionButton.extended(
-        onPressed: _showAddManualMemberDialog,
+        onPressed: () => _showAddManualMemberBottomSheet(context, profile.id),
         icon: const Icon(LucideIcons.userPlus),
         label: const Text('Add Member'),
         backgroundColor: const Color(0xFF3F3D96),
@@ -409,79 +427,30 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     return null;
   }
 
-  Future<void> _showAddManualMemberDialog() async {
-    final TextEditingController nameController = TextEditingController();
-    final bool? confirm = await showDialog<bool>(
+  void _showAddManualMemberBottomSheet(
+    BuildContext context,
+    String? currentUserId,
+  ) {
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      constraints: const BoxConstraints(maxWidth: 800),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: Text(
-            'Add Team Member',
-            style: GoogleFonts.plusJakartaSans(color: Colors.white),
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
-          content: TextField(
-            controller: nameController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'Name',
-              labelStyle: const TextStyle(color: Colors.white54),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.2),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
+          child: _AddTeamMemberForm(
+            currentUserId: currentUserId,
+            onSave: _loadData,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.plusJakartaSans(color: Colors.white54),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                if (nameController.text.trim().isNotEmpty) {
-                  Navigator.pop(context, true);
-                }
-              },
-              child: Text(
-                'Add',
-                style: GoogleFonts.plusJakartaSans(
-                  color: Colors.greenAccent,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
         );
       },
     );
-
-    if (confirm == true) {
-      try {
-        await AuthService().addManualTeamMember(nameController.text.trim());
-        setState(() => _loadData());
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Member added successfully')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Failed to add member: $e')));
-        }
-      }
-    }
   }
 
   Widget _buildTeamFundsTab(
@@ -489,30 +458,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     String? currentUserId, [
     bool isViewer = false,
   ]) {
-    return FutureBuilder<List<Collector>>(
-      future: _collectorsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            _cachedCollectors == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError && _cachedCollectors == null) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
+    final collectors = _cachedCollectors;
 
-        final collectors = snapshot.data ?? _cachedCollectors ?? [];
-        final teamMembers = collectors
-            .where((c) => c.role == 'team_member' || c.isCoreTeamMember)
-            .toList();
+    if (collectors == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        if (teamMembers.isEmpty) {
-          return const Center(
-            child: Text(
-              'No team members found.',
-              style: TextStyle(color: Colors.white54),
-            ),
-          );
-        }
+    final teamMembers = collectors
+        .where((c) => c.role == 'team_member' || c.isCoreTeamMember)
+        .toList();
+
+    if (teamMembers.isEmpty) {
+      return const Center(
+        child: Text(
+          'No team members found.',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
 
         double totalFunds = 0;
         for (var member in teamMembers) {
@@ -618,7 +581,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       subtitle: Text(
                         isPaid
                             ? 'Paid ₹${amount.toStringAsFixed(0)} via ${member.fundPaymentMethod}'
-                            : 'Pending',
+                            : (member.fundAmount != null && member.fundAmount! > 0
+                                ? 'Pending ₹${member.fundAmount!.toStringAsFixed(0)}'
+                                : 'Pending'),
                         style: GoogleFonts.plusJakartaSans(
                           color: isPaid
                               ? Colors.green[400]
@@ -627,10 +592,95 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                         ),
                       ),
                       trailing: isAdmin
-                          ? Icon(
-                              LucideIcons.edit2,
-                              color: Colors.white.withValues(alpha: 0.5),
-                              size: 18,
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    LucideIcons.edit2,
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    size: 18,
+                                  ),
+                                  tooltip: 'Edit',
+                                  onPressed: () => _showTeamFundBottomSheet(
+                                    context,
+                                    member,
+                                    currentUserId,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    LucideIcons.trash2,
+                                    color: Colors.redAccent,
+                                    size: 18,
+                                  ),
+                                  tooltip: 'Remove member',
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        backgroundColor: const Color(0xFF1E1E1E),
+                                        title: Text(
+                                          'Remove Member',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        content: Text(
+                                          'Remove "${member.name}" from Team Funds? This cannot be undone.',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(ctx, false),
+                                            child: Text(
+                                              'Cancel',
+                                              style: GoogleFonts.plusJakartaSans(
+                                                color: Colors.white54,
+                                              ),
+                                            ),
+                                          ),
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(ctx, true),
+                                            child: Text(
+                                              'Remove',
+                                              style: GoogleFonts.plusJakartaSans(
+                                                color: Colors.redAccent,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      try {
+                                        await AuthService().deleteTeamMember(member.id);
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '${member.name} removed',
+                                                style: const TextStyle(color: Colors.white),
+                                              ),
+                                              backgroundColor: Colors.redAccent,
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Error: $e')),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  },
+                                ),
+                              ],
                             )
                           : null,
                       onTap: isAdmin
@@ -647,8 +697,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             ),
           ],
         );
-      },
-    );
   }
 
   Widget _buildSpendingsTab(
@@ -852,9 +900,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     String title,
     String value,
     IconData icon,
-    Color color,
-  ) {
-    return Container(
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    final card = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
@@ -889,6 +938,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         ],
       ),
     );
+
+    if (onTap != null) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: card,
+        ),
+      );
+    }
+    return card;
   }
 
   void _showTeamFundBottomSheet(
@@ -1120,23 +1181,56 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                             LucideIcons.banknote,
                             AppColors.amber,
                           );
+                          final metric5 = _buildMetricCard(
+                            'Total Pending',
+                            '₹${_totalPendingAmount.toStringAsFixed(0)}',
+                            LucideIcons.clock,
+                            AppColors.blue,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PendingCollectionsScreen(),
+                                ),
+                              );
+                            },
+                          );
 
                           return Column(
                             children: [
                               if (isDesktop)
-                                Row(
-                                  children: [
-                                    Expanded(child: metric1),
-                                    const SizedBox(width: 12),
-                                    Expanded(child: metric2),
-                                    if (!isViewer) ...[
+                                if (isViewer)
+                                  Row(
+                                    children: [
+                                      Expanded(child: metric1),
                                       const SizedBox(width: 12),
-                                      Expanded(child: metric3),
+                                      Expanded(child: metric2),
                                       const SizedBox(width: 12),
-                                      Expanded(child: metric4),
+                                      Expanded(child: metric5),
                                     ],
-                                  ],
-                                )
+                                  )
+                                else
+                                  Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(child: metric1),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: metric2),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: metric5),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(child: metric3),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: metric4),
+                                        ],
+                                      ),
+                                    ],
+                                  )
                               else
                                 Column(
                                   children: [
@@ -1147,13 +1241,26 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                                         Expanded(child: metric2),
                                       ],
                                     ),
-                                    if (!isViewer) ...[
+                                    if (isViewer) ...[
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(child: metric5),
+                                        ],
+                                      ),
+                                    ] else ...[
                                       const SizedBox(height: 12),
                                       Row(
                                         children: [
                                           Expanded(child: metric3),
                                           const SizedBox(width: 12),
                                           Expanded(child: metric4),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(child: metric5),
                                         ],
                                       ),
                                     ],
@@ -2145,7 +2252,8 @@ class _TeamFundFormState extends State<_TeamFundForm> {
   }
 
   Future<void> _save() async {
-    if (_isPaid && _amountController.text.isEmpty) {
+    final amountText = _amountController.text.trim();
+    if (_isPaid && amountText.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
@@ -2157,7 +2265,7 @@ class _TeamFundFormState extends State<_TeamFundForm> {
       await AuthService().updateTeamFundStatus(
         uid: widget.member.id,
         fundStatus: _isPaid ? 'paid' : 'pending',
-        fundAmount: _isPaid ? double.tryParse(_amountController.text) : null,
+        fundAmount: amountText.isNotEmpty ? double.tryParse(amountText) : null,
         fundPaymentMethod: _isPaid ? _paymentMethod : null,
         fundCollectedBy: _isPaid ? widget.currentUserId : null,
       );
@@ -2254,29 +2362,29 @@ class _TeamFundFormState extends State<_TeamFundForm> {
             ],
           ),
 
-          if (_isPaid) ...[
-            const SizedBox(height: 24),
-            TextField(
-              controller: _amountController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white, fontSize: 18),
-              decoration: InputDecoration(
-                labelText: 'Amount (₹)',
-                labelStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(
-                  Icons.currency_rupee,
-                  color: Colors.white54,
-                ),
-                filled: true,
-                fillColor: const Color(0xFF2C2C2C),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _amountController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+            decoration: InputDecoration(
+              labelText: 'Amount (₹)',
+              labelStyle: const TextStyle(color: Colors.white54),
+              prefixIcon: const Icon(
+                Icons.currency_rupee,
+                color: Colors.white54,
+              ),
+              filled: true,
+              fillColor: const Color(0xFF2C2C2C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
               ),
             ),
-            const SizedBox(height: 20),
+          ),
 
+          if (_isPaid) ...[
+            const SizedBox(height: 20),
             Text(
               'Payment Method',
               style: GoogleFonts.plusJakartaSans(
@@ -2532,6 +2640,326 @@ class _SpendingCardState extends State<_SpendingCard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AddTeamMemberForm extends StatefulWidget {
+  final String? currentUserId;
+  final VoidCallback onSave;
+
+  const _AddTeamMemberForm({
+    required this.currentUserId,
+    required this.onSave,
+  });
+
+  @override
+  State<_AddTeamMemberForm> createState() => _AddTeamMemberFormState();
+}
+
+class _AddTeamMemberFormState extends State<_AddTeamMemberForm> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
+  String? _fundStatus; // Starts as null (unselected)
+  String _paymentMethod = 'UPI';
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.addListener(_onFieldChanged);
+    _amountController.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _nameController.removeListener(_onFieldChanged);
+    _amountController.removeListener(_onFieldChanged);
+    _nameController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  bool get _isSubmitValid {
+    if (_isSaving) return false;
+    if (_nameController.text.trim().isEmpty) return false;
+    if (_fundStatus == null) return false;
+    // For paid, amount is required
+    if (_fundStatus == 'paid') {
+      final amount = double.tryParse(_amountController.text) ?? 0.0;
+      if (amount <= 0) return false;
+    }
+    return true;
+  }
+
+  Future<void> _save() async {
+    if (!_isSubmitValid) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final name = _nameController.text.trim();
+      final isPaid = _fundStatus == 'paid';
+      final amountText = _amountController.text.trim();
+      final amount = amountText.isNotEmpty ? double.tryParse(amountText) : null;
+      final method = isPaid ? _paymentMethod : null;
+
+      await AuthService().addManualTeamMember(
+        name,
+        fundStatus: _fundStatus!,
+        fundAmount: amount,
+        fundPaymentMethod: method,
+        fundCollectedBy: isPaid ? widget.currentUserId : null,
+      );
+
+      if (mounted) {
+        widget.onSave();
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Member added successfully',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Add Team Member',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Name Input
+          TextField(
+            controller: _nameController,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'Name',
+              labelStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: const Color(0xFF2C2C2C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Payment Status Selection
+          Row(
+            children: [
+              Text(
+                'Status: ',
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white70,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(width: 16),
+              ChoiceChip(
+                label: const Text('Pending'),
+                selected: _fundStatus == 'pending',
+                onSelected: (val) {
+                  if (val) setState(() => _fundStatus = 'pending');
+                },
+                selectedColor: Colors.orange.withValues(alpha: 0.2),
+                labelStyle: TextStyle(
+                  color: _fundStatus == 'pending' ? Colors.orange[400] : Colors.white70,
+                ),
+                backgroundColor: const Color(0xFF2C2C2C),
+              ),
+              const SizedBox(width: 12),
+              ChoiceChip(
+                label: const Text('Paid'),
+                selected: _fundStatus == 'paid',
+                onSelected: (val) {
+                  if (val) setState(() => _fundStatus = 'paid');
+                },
+                selectedColor: Colors.green.withValues(alpha: 0.2),
+                labelStyle: TextStyle(
+                  color: _fundStatus == 'paid' ? Colors.green[400] : Colors.white70,
+                ),
+                backgroundColor: const Color(0xFF2C2C2C),
+              ),
+            ],
+          ),
+
+          if (_fundStatus != null) ...[
+            const SizedBox(height: 24),
+            TextField(
+              controller: _amountController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+              decoration: InputDecoration(
+                labelText: _fundStatus == 'pending' ? 'Expected Amount (₹) - Optional' : 'Amount (₹)',
+                labelStyle: const TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(
+                  Icons.currency_rupee,
+                  color: Colors.white54,
+                ),
+                filled: true,
+                fillColor: const Color(0xFF2C2C2C),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+
+          if (_fundStatus == 'paid') ...[
+            const SizedBox(height: 20),
+
+            Text(
+              'Payment Method',
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _paymentMethod = 'UPI'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _paymentMethod == 'UPI'
+                            ? const Color(0xFF5E5CE6).withValues(alpha: 0.2)
+                            : const Color(0xFF2C2C2C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _paymentMethod == 'UPI'
+                              ? const Color(0xFF5E5CE6)
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'UPI',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: _paymentMethod == 'UPI'
+                              ? const Color(0xFF5E5CE6)
+                              : Colors.white54,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _paymentMethod = 'Cash'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _paymentMethod == 'Cash'
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : const Color(0xFF2C2C2C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _paymentMethod == 'Cash'
+                              ? Colors.green
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Cash',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: _paymentMethod == 'Cash'
+                              ? Colors.green
+                              : Colors.white54,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 32),
+          ElevatedButton(
+            onPressed: !_isSubmitValid ? null : _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5E5CE6),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    _fundStatus == null
+                        ? 'SELECT STATUS'
+                        : (_fundStatus == 'paid' ? 'ADD PAID MEMBER' : 'ADD PENDING MEMBER'),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }

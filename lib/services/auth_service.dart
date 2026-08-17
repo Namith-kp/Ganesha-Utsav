@@ -169,7 +169,13 @@ class AuthService {
   }
 
   // Add a manual team member (for users who haven't installed the app)
-  Future<void> addManualTeamMember(String name) async {
+  Future<void> addManualTeamMember(
+    String name, {
+    String fundStatus = 'pending',
+    double? fundAmount,
+    String? fundPaymentMethod,
+    String? fundCollectedBy,
+  }) async {
     await _firestore.collection('collectors').add({
       'name': name,
       'email': '',
@@ -177,7 +183,11 @@ class AuthService {
       'role': 'team_member',
       'isCoreTeamMember': true,
       'isManualEntry': true,
-      'fundStatus': 'pending',
+      'fundStatus': fundStatus,
+      'fundAmount': fundAmount,
+      'fundPaymentMethod': fundPaymentMethod,
+      'fundCollectedAt': fundStatus == 'paid' ? FieldValue.serverTimestamp() : null,
+      'fundCollectedBy': fundCollectedBy,
     });
   }
 
@@ -199,6 +209,11 @@ class AuthService {
       'fundCollectedBy': fundCollectedBy,
     };
     await _firestore.collection('collectors').doc(uid).update(updates);
+  }
+
+  // Delete a team member document (admin only)
+  Future<void> deleteTeamMember(String uid) async {
+    await _firestore.collection('collectors').doc(uid).delete();
   }
 
   // Sign out

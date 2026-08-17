@@ -39,6 +39,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isLocating = true;
   LatLng? _cachedCenter;
   bool _isPickingLocation = false;
+  Building? _movingBuilding;          // non-null = admin is repositioning this marker
   StreamSubscription<void>? _addTagSub;
 
   void _setPickingLocation(bool active) {
@@ -140,6 +141,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final collectorAsync = ref.watch(collectorProfileProvider);
     final profile = collectorAsync.value;
     final canCreate = profile?.canCreate ?? false;
+    final isAdmin = profile?.isAdmin ?? false;
     final canSeeAllTags = profile?.canSeeAllTags ?? false;
 
     // Automatically snap to user's location on startup once GPS is acquired
@@ -257,8 +259,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     }
                   },
                   onTap: (tapPosition, point) {
-                    // In pick mode, taps are ignored — user uses the Confirm button.
-                    if (_isPickingLocation) return;
+                    // In pick mode or moving mode, taps are ignored.
+                    if (_isPickingLocation || _movingBuilding != null) return;
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => StreetViewScreen(
@@ -269,6 +271,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     );
                   },
                   onLongPress: (tapPosition, point) {
+                    // Ignore map long-press while a marker is being moved
+                    if (_movingBuilding != null) return;
                     if (canCreate) {
                       showCreateBuildingDialog(context, ref, point);
                     } else {
@@ -297,6 +301,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     selectedFilter: _selectedFilter,
                     targetBuildingId: widget.targetBuildingId,
                     canSeeAllTags: canSeeAllTags,
+                    isAdmin: isAdmin,
+                    onLongPressMarker: (building) {
+                      // Enter move-marker mode for this building
+                      setState(() => _movingBuilding = building);
+                      // Centre map on the marker so the pin starts exactly on it
+                      _animatedMapMove(
+                        LatLng(building.lat, building.lng),
+                        _mapController.camera.zoom < 18.0
+                            ? 18.0
+                            : _mapController.camera.zoom,
+                      );
+                    },
                   ),
                   const _LiveLocationMarkerLayer(),
                 ],
@@ -582,6 +598,218 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ),
                 ),
               ],
+
+              // ── Move-Marker overlay (admin long-press on existing marker) ──
+              if (_movingBuilding != null) ...[
+                // Top instruction banner
+                Positioned(
+                  top: 60,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.amber),
+                        boxShadow: const [
+                          BoxShadow(blurRadius: 12, color: Colors.black54),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.open_with_rounded,
+                            color: AppColors.amber,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Drag map to move "${_movingBuilding!.name}"',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Fixed centre pin — orange to distinguish from "create" flow
+                IgnorePointer(
+                  child: Center(
+                    child: Transform.translate(
+                      offset: const Offset(0, -26),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: AppColors.amber,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.amber.withValues(alpha: 0.45),
+                                  blurRadius: 16,
+                                  spreadRadius: 4,
+                                ),
+                                const BoxShadow(
+                                  color: Colors.black54,
+                                  blurRadius: 8,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.open_with_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          Container(
+                            width: 3,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: AppColors.amber,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          Container(
+                            width: 10,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.black38,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Bottom action bar: Cancel + Confirm
+                Positioned(
+                  bottom: 24,
+                  left: 16,
+                  right: 16,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              setState(() => _movingBuilding = null),
+                          icon: const Icon(LucideIcons.x, size: 16),
+                          label: Text(
+                            'Cancel',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textPrimary,
+                            side: const BorderSide(color: AppColors.border),
+                            backgroundColor: AppColors.bgCard,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.amber, Color(0xFFF97316)],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.amber.withValues(alpha: 0.4),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final newPoint = _mapController.camera.center;
+                              final building = _movingBuilding!;
+                              setState(() => _movingBuilding = null);
+                              try {
+                                await ref
+                                    .read(buildingServiceProvider)
+                                    .updateBuildingLocation(
+                                      building.id,
+                                      newPoint.latitude,
+                                      newPoint.longitude,
+                                    );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '"${building.name}" moved to new location!',
+                                      ),
+                                      backgroundColor: AppColors.green,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error moving marker: $e'),
+                                      backgroundColor: AppColors.crimson,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            label: Text(
+                              'Save New Location',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           );
         },
@@ -626,6 +854,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetRef ref,
     List<Building> buildings,
     bool canSeeAllTags,
+    bool isAdmin,
+    void Function(Building) onLongPressMarker,
   ) {
     var filteredBuildings = buildings.where((building) {
       if (widget.targetBuildingId != null) {
@@ -677,6 +907,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           onTap: () {
             _animatedMapMove(LatLng(building.lat, building.lng), 19.5);
             showCollectionBottomSheet(context, ref, building);
+          },
+          onLongPress: () {
+            if (isAdmin) {
+              onLongPressMarker(building);
+            }
           },
           child: Stack(
             clipBehavior: Clip.none,
@@ -736,11 +971,15 @@ class _BuildingsMarkerLayer extends ConsumerWidget {
   final String selectedFilter;
   final String? targetBuildingId;
   final bool canSeeAllTags;
+  final bool isAdmin;
+  final void Function(Building) onLongPressMarker;
 
   const _BuildingsMarkerLayer({
     required this.selectedFilter,
     required this.targetBuildingId,
     required this.canSeeAllTags,
+    required this.isAdmin,
+    required this.onLongPressMarker,
   });
 
   @override
@@ -753,7 +992,14 @@ class _BuildingsMarkerLayer extends ConsumerWidget {
           final state = context.findAncestorStateOfType<_HomeScreenState>();
           if (state == null) return const <Marker>[];
 
-          return state._buildMarkers(context, ref, buildings, canSeeAllTags);
+          return state._buildMarkers(
+            context,
+            ref,
+            buildings,
+            canSeeAllTags,
+            isAdmin,
+            onLongPressMarker,
+          );
         },
         loading: () => const <Marker>[],
         error: (err, stack) => const <Marker>[],

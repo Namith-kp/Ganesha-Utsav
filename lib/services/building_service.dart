@@ -176,6 +176,27 @@ class BuildingService {
     await batch.commit();
   }
 
+  // Delete a single unit from a building (admin only)
+  Future<void> deleteUnit({
+    required String buildingId,
+    required String unitId,
+  }) async {
+    final batch = _firestore.batch();
+
+    final buildingRef = _firestore.collection('buildings').doc(buildingId);
+    final unitRef = buildingRef.collection('units').doc(unitId);
+
+    batch.delete(unitRef);
+
+    // Decrement total units count
+    batch.update(buildingRef, {
+      'totalUnits': FieldValue.increment(-1),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
   // Delete a building and its units
   Future<void> deleteBuilding(String buildingId) async {
     final batch = _firestore.batch();

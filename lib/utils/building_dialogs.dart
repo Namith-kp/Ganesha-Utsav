@@ -147,7 +147,7 @@ Future<void> showCollectionBottomSheet(
                               ),
                             ),
                           ),
-                          if (isAdmin)
+                          if (isAdmin || canCreate)
                             IconButton(
                               icon: const Icon(
                                 LucideIcons.plusCircle,
@@ -432,6 +432,78 @@ Future<void> showCollectionBottomSheet(
                                       );
                                     },
                                   ),
+                              if (isAdmin)
+                                IconButton(
+                                  icon: const Icon(
+                                    LucideIcons.trash2,
+                                    size: 16,
+                                    color: AppColors.crimson,
+                                  ),
+                                  tooltip: 'Delete Unit',
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        backgroundColor: AppColors.bgCard,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16),
+                                          side: BorderSide(
+                                            color: AppColors.borderLight,
+                                          ),
+                                        ),
+                                        title: Text(
+                                          'Delete Unit?',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        content: Text(
+                                          'Delete "${unit.unitLabel}" from ${building.name}? This cannot be undone.',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: Text(
+                                              'CANCEL',
+                                              style: GoogleFonts.plusJakartaSans(
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: AppColors.crimson,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            child: Text(
+                                              'DELETE',
+                                              style: GoogleFonts.plusJakartaSans(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      await buildingService.deleteUnit(
+                                        buildingId: building.id,
+                                        unitId: unit.id,
+                                      );
+                                    }
+                                  },
+                                ),
                               ],
                             ),
                             trailing: Chip(
@@ -486,7 +558,7 @@ Future<void> showCollectionBottomSheet(
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        if (isAdmin)
+                        if (isAdmin || canCreate)
                           IconButton(
                             icon: const Icon(
                               LucideIcons.plusCircle,
