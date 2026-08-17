@@ -54,7 +54,7 @@ jobs:
       - name: Extract Version from pubspec.yaml
         id: version
         run: |
-          VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2)
+          VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r')
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create or Update GitHub Release

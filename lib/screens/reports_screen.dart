@@ -22,6 +22,7 @@ import '../models/spending.dart';
 import '../services/spending_service.dart';
 import '../utils/spending_dialogs.dart';
 import 'pending_collections_screen.dart';
+import 'package:intl/intl.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -63,6 +64,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   String _searchQuery = '';
   final FocusNode _searchFocusNode = FocusNode();
   bool _showOnlyDonations = false;
+  bool _isChartExpanded = false;
 
   @override
   void initState() {
@@ -1267,11 +1269,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                                   ],
                                 ),
                               if (!isViewer) ...[
-                                const SizedBox(height: 24),
                                 Container(
-                                  height: isDesktop ? 300 : 200,
-                                  padding: const EdgeInsets.all(16),
-                                  margin: const EdgeInsets.only(bottom: 8),
+                                  margin: const EdgeInsets.only(top: 24, bottom: 8),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF1E1E1E),
                                     borderRadius: BorderRadius.circular(20),
@@ -1279,7 +1278,84 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                                       color: Colors.white.withValues(alpha: 0.1),
                                     ),
                                   ),
-                                  child: _buildChart(dailyTotalsMap),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      InkWell(
+                                        onTap: () {
+                                          setState(() {
+                                            _isChartExpanded = !_isChartExpanded;
+                                          });
+                                        },
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    LucideIcons.barChart3,
+                                                    color: AppColors.accent,
+                                                    size: 18,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    '7-Day Collection Trend',
+                                                    style:
+                                                        GoogleFonts.plusJakartaSans(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 14,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              Icon(
+                                                _isChartExpanded
+                                                    ? LucideIcons.chevronUp
+                                                    : LucideIcons.chevronDown,
+                                                color: AppColors.textSecondary,
+                                                size: 18,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 250),
+                                        curve: Curves.easeInOut,
+                                        height: _isChartExpanded
+                                            ? (isDesktop ? 260 : 180)
+                                            : 0,
+                                        child: ClipRect(
+                                          child: AnimatedOpacity(
+                                            duration: const Duration(
+                                              milliseconds: 200,
+                                            ),
+                                            opacity:
+                                                _isChartExpanded ? 1.0 : 0.0,
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(
+                                                left: 16,
+                                                right: 16,
+                                                bottom: 16,
+                                              ),
+                                              child:
+                                                  _buildChart(dailyTotalsMap),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ],
@@ -1679,7 +1755,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       final bool isCorrection = item['isCorrection'] == true;
                       final date = unit.collectedAt;
                       final timeStr = date != null
-                          ? '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
+                          ? DateFormat('h:mm a').format(date.toLocal())
                           : 'No time';
 
                       if (isCorrection) {
@@ -2580,7 +2656,7 @@ class _SpendingCardState extends State<_SpendingCard> {
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      'Date: ${widget.spending.createdAt!.day.toString().padLeft(2, '0')}/${widget.spending.createdAt!.month.toString().padLeft(2, '0')}/${widget.spending.createdAt!.year} at ${widget.spending.createdAt!.hour.toString().padLeft(2, '0')}:${widget.spending.createdAt!.minute.toString().padLeft(2, '0')}',
+                      'Date: ${DateFormat('dd/MM/yyyy at h:mm a').format(widget.spending.createdAt!.toLocal())}',
                       style: GoogleFonts.plusJakartaSans(
                         color: Colors.white54,
                         fontSize: 13,

@@ -8,6 +8,7 @@ import '../models/unit.dart';
 import '../utils/building_dialogs.dart';
 import '../providers/map_provider.dart';
 import '../main.dart';
+import 'package:intl/intl.dart';
 
 class CollectorReportScreen extends ConsumerStatefulWidget {
   final String collectorName;
@@ -135,7 +136,7 @@ class _CollectorReportScreenState extends ConsumerState<CollectorReportScreen> {
                           ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'
                           : 'Unknown Date';
                       final timeStr = date != null
-                          ? '${date.hour}:${date.minute.toString().padLeft(2, '0')}'
+                          ? DateFormat('h:mm a').format(date.toLocal())
                           : '';
 
                       return Card(
