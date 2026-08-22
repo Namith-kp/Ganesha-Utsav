@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/collector.dart';
 
@@ -75,21 +76,29 @@ class AuthService {
   // Sign in with Google
   Future<auth.UserCredential?> signInWithGoogle() async {
     try {
-      final googleUser = await GoogleSignIn(
-        clientId:
-            '442465747713-9viehhaefh9dfrsip7kbkc1h246nk36q.apps.googleusercontent.com',
-      ).signIn();
-      if (googleUser == null) return null; // user cancelled
+      late final auth.UserCredential userCredential;
 
-      final googleAuth = await googleUser.authentication;
-      final credential = auth.GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
+      if (kIsWeb) {
+        final provider = auth.GoogleAuthProvider()
+          ..setCustomParameters({'prompt': 'select_account'});
+        userCredential = await _firebaseAuth.signInWithPopup(provider);
+      } else {
+        final googleUser = await GoogleSignIn(
+          clientId:
+              '442465747713-9viehhaefh9dfrsip7kbkc1h246nk36q.apps.googleusercontent.com',
+        ).signIn();
+        if (googleUser == null) return null; // user cancelled
 
-      final userCredential = await _firebaseAuth.signInWithCredential(
-        credential,
-      );
+        final googleAuth = await googleUser.authentication;
+        final credential = auth.GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        userCredential = await _firebaseAuth.signInWithCredential(
+          credential,
+        );
+      }
 
       // Create Firestore profile only on first sign-in
       if (userCredential.user != null) {
@@ -218,10 +227,12 @@ class AuthService {
 
   // Sign out
   Future<void> signOut() async {
-    await GoogleSignIn(
-      clientId:
-          '442465747713-9viehhaefh9dfrsip7kbkc1h246nk36q.apps.googleusercontent.com',
-    ).signOut();
+    if (!kIsWeb) {
+      await GoogleSignIn(
+        clientId:
+            '442465747713-9viehhaefh9dfrsip7kbkc1h246nk36q.apps.googleusercontent.com',
+      ).signOut();
+    }
     await _firebaseAuth.signOut();
   }
 }
